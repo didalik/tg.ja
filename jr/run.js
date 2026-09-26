@@ -1,0 +1,103 @@
+#!/usr/bin/env node
+
+// tg/ja/public/jr/run.js -- the Toll Gate's Job Requester: does the TM {{{1
+// trade, waits to be matched, sends one message, and prints back whatever
+// `ja`'s echo job sends in reply -- the whole point is proving the
+// toll-gate wiring (TM gate -> local/ws match -> grant -> job relay) works
+// end to end against `daeh` directly, not the job itself.
+//
+// Imports daeh directly by relative path -- daeh isn't published yet, but
+// we're all in the same monorepo checkout right now, so there's no reason
+// to hand-copy it the way db/public/requestor's lib/ files still do. Once
+// daeh is npm-published, this becomes a one-line import-specifier change,
+// not a re-copy. (This does mean jr isn't independently cloneable the way
+// db/public/requestor is, for now -- a deliberate, temporary tradeoff:
+// proving daeh's interfaces via a real consumer is this round's actual
+// goal, not re-solving "standalone clone" for jr too.)
+//
+// Env:
+//   TG_WS_URL          -- optional, defaults to the qa deploy
+//   TG_REQUESTOR_NAME  -- optional, defaults to 'jr'
+//   TG_TM_ISSUER_PK    -- the Agent's Stellar public key (see tm.js). If unset,
+//                         the TM trade is skipped entirely (dev/test only) --
+//                         for real use this should always be set.
+//   TG_TM_TIMEOUT_MS   -- optional: cancel the DEX buy offer and give up if
+//                         it doesn't fill within this long (see tm.js).
+//   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
+//                         matchTimeoutMs) if never matched with an Agent
+//                         within this long, once the TM trade (if any) has
+//                         already gone through.
+
+import WebSocket from 'ws'
+import { generate_keypair } from '../../../../daeh/lib/sdk.js'
+import { job } from '../../../../daeh/lib/job.ts'
+import { buyGrant } from './tm.js'
+
+/** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox {{{1
+ * (inside daeh's job()) pulls them one at a time once matched. Blocks
+ * forever once the queue is drained -- fine here, there's nothing more to
+ * say after the sentinel. */
+function makeOutbox () {
+  const queue = []
+  let pending
+  return {
+    push (line) {
+      if (pending) { const resolve = pending; pending = undefined; resolve(line); }
+      else queue.push(line);
+    },
+    receive () {
+      if (queue.length > 0) return Promise.resolve(queue.shift());
+      return new Promise(resolve => { pending = resolve });
+    },
+  };
+}
+
+async function main () { // {{{1
+  const [sk, pk] = (await generate_keypair.call(globalThis.crypto.subtle)).split(' ')
+
+  const actor = {
+    app: 'jr',
+    iss: { name: process.env.TG_REQUESTOR_NAME ?? 'jr', pk },
+    sk,
+    WebSocket,
+    wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'],
+  }
+
+  if (process.env.TG_TM_ISSUER_PK) {
+    await buyGrant(line => console.log('[jr] TM:', line))
+    console.log('[jr] TM grant confirmed')
+  } else {
+    console.log('[jr] TG_TM_ISSUER_PK not set -- TM gating skipped (dev/test only)')
+  }
+
+  const outbox = makeOutbox()
+  outbox.push('hello from jr')
+  outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
+
+  const gen = job(actor, {
+    aud: 'echo', label: 'Echo', outbox,
+    matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
+  })
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === 'open') {
+      console.log('[jr] Connected, waiting to be matched with an Agent...')
+    } else if (event.type === 'matched') {
+      console.log('[jr] Matched -- sending the echo request...')
+    } else if (event.type === 'output') {
+      console.log('[jr] sent:', event.line)
+    } else if (event.type === 'message') {
+      console.log('[jr] echo reply:', event.payload.sub)
+    } else if (event.type === 'error') {
+      console.error('[jr] job error:', event.error)
+    }
+    step = await gen.next()
+  }
+  console.log('[jr]', step.value.message)
+}
+
+main().catch(e => {
+  console.error('[jr] FAILED', e)
+  process.exitCode = 1
+})
