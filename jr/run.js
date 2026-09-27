@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// tg/ja/public/jr/run.js -- the Toll Gate's Job Requester: does the TM {{{1
+// tg/ja/public/jr/run.js -- the Toll Gate's Job Requester: does the gate {{{1
 // trade, waits to be matched, sends one message, and prints back whatever
 // `ja`'s echo job sends in reply -- the whole point is proving the
-// toll-gate wiring (TM gate -> local/ws match -> grant -> job relay) works
+// toll-gate wiring (gate -> tg/ws match -> grant -> job relay) works
 // end to end against `daeh` directly, not the job itself.
 //
 // Imports daeh directly by relative path -- daeh isn't published yet, but
@@ -18,20 +18,21 @@
 // Env:
 //   TG_WS_URL          -- optional, defaults to the qa deploy
 //   TG_REQUESTOR_NAME  -- optional, defaults to 'jr'
-//   TG_TM_ISSUER_PK    -- the Agent's Stellar public key (see tm.js). If unset,
-//                         the TM trade is skipped entirely (dev/test only) --
-//                         for real use this should always be set.
-//   TG_TM_TIMEOUT_MS   -- optional: cancel the DEX buy offer and give up if
-//                         it doesn't fill within this long (see tm.js).
+//   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js). If
+//                         unset, the gate trade is skipped entirely
+//                         (dev/test only) -- for real use this should
+//                         always be set.
+//   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
+//                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
 //                         matchTimeoutMs) if never matched with an Agent
-//                         within this long, once the TM trade (if any) has
+//                         within this long, once the gate trade (if any) has
 //                         already gone through.
 
 import WebSocket from 'ws'
 import { generate_keypair } from '../../../../daeh/lib/sdk.js'
 import { job } from '../../../../daeh/lib/job.ts'
-import { buyGrant } from './tm.js'
+import { buyGrant } from './gate.js'
 
 /** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox {{{1
  * (inside daeh's job()) pulls them one at a time once matched. Blocks
@@ -63,11 +64,11 @@ async function main () { // {{{1
     wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'],
   }
 
-  if (process.env.TG_TM_ISSUER_PK) {
-    await buyGrant(line => console.log('[jr] TM:', line))
-    console.log('[jr] TM grant confirmed')
+  if (process.env.TG_ISSUER_PK) {
+    await buyGrant(line => console.log('[jr] gate:', line))
+    console.log('[jr] gate grant confirmed')
   } else {
-    console.log('[jr] TG_TM_ISSUER_PK not set -- TM gating skipped (dev/test only)')
+    console.log('[jr] TG_ISSUER_PK not set -- gating skipped (dev/test only)')
   }
 
   const outbox = makeOutbox()

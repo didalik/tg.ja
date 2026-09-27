@@ -1,5 +1,5 @@
-// tg/ja/public/jr/tm.js -- the Requester's half of the Toll Gate's TM gate {{{1
-// (see tg/ja/jobs/agent/tm.js for the Agent's half and the full
+// tg/ja/public/jr/gate.js -- the Requester's half of the Toll Gate's gate {{{1
+// mechanism (see tg/ja/gate.js for the Agent's half and the full
 // mechanism). Establishes trust to the Agent's issued asset and places a
 // matching buy offer -- Stellar's DEX auto-matches standing orders
 // whenever a compatible one appears, so this doesn't need to coordinate
@@ -7,32 +7,30 @@
 // Agent's sell isn't live yet.
 //
 // Env:
-//   TG_TM_ISSUER_PK    -- required: the Agent's own Stellar public key. This
+//   TG_ISSUER_PK       -- required: the Agent's own Stellar public key. This
 //                        is published/known ahead of time, the same way any
 //                        service's payment address would be -- it can't be
 //                        discovered via the WS handshake, since the Agent
-//                        doesn't even connect to local/ws until after its
-//                        own gate opens.
-//   TG_TM_ASSET_CODE   -- optional, defaults to 'TGA' -- must match the Agent's
-//   TG_TM_PRICE        -- optional, defaults to '1' -- must match the Agent's
-//   TG_TM_REQUESTOR_SK -- optional: reuse a specific Stellar identity instead
+//                        doesn't even connect to tg/ws until after its own
+//                        gate opens.
+//   TG_ASSET_CODE      -- optional, defaults to 'TGA' -- must match the Agent's
+//   TG_PRICE           -- optional, defaults to '1' -- must match the Agent's
+//   TG_REQUESTOR_SK    -- optional: reuse a specific Stellar identity instead
 //                        of generating (and funding) a fresh one each run
-//   TG_TM_TIMEOUT_MS   -- optional: if the buy offer doesn't fill within
+//   TG_GRANT_TIMEOUT_MS -- optional: if the buy offer doesn't fill within
 //                        this many ms, cancel it (see cancelBuyOffer) and
 //                        give up -- unset (the default) waits forever,
 //                        same as db's original tm.js always has.
 
-import { Asset, Keypair, Networks, Operation, TransactionBuilder } from '@stellar/stellar-sdk'
-import { effectsCursorNow, ensureFunded, pollForTrade, server } from './stellar.mjs'
+import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } from '@stellar/stellar-sdk'
+import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server } from './stellar.mjs'
 
-const BASE_FEE = '100000'
-
-function assetCode () { return process.env.TG_TM_ASSET_CODE ?? 'TGA'; }
-function price () { return process.env.TG_TM_PRICE ?? '1'; }
+function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; }
+function price () { return process.env.TG_PRICE ?? '1'; }
 
 async function trust (kp, asset) { // {{{1
   const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.changeTrust({ asset }))
     .setTimeout(60).build()
   tx.sign(kp)
@@ -41,7 +39,7 @@ async function trust (kp, asset) { // {{{1
 
 async function buy (kp, asset) { // {{{1
   const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.manageBuyOffer({
       selling: Asset.native(), buying: asset, buyAmount: '1', price: price(), offerId: '0',
     }))
@@ -51,12 +49,12 @@ async function buy (kp, asset) { // {{{1
 }
 
 /** Cancels this account's still-pending (unfilled) buy offer(s) for `asset`
- * -- the mirror image of tg/ja/jobs/agent/tm.js's cancelStaleOffers, but
- * for the Requester's own offer: if nobody's granting this, don't leave
- * it resting on the DEX forever either. Looks the offer up by querying
- * the account directly (same technique cancelStaleOffers uses) rather
- * than trying to extract an offer id out of the submission result's XDR
- * -- simpler, and doesn't depend on that shape at all. {{{1 */
+ * -- the mirror image of tg/ja/gate.js's cancelStaleOffers, but for the
+ * Requester's own offer: if nobody's granting this, don't leave it resting
+ * on the DEX forever either. Looks the offer up by querying the account
+ * directly (same technique cancelStaleOffers uses) rather than trying to
+ * extract an offer id out of the submission result's XDR -- simpler, and
+ * doesn't depend on that shape at all. {{{1 */
 async function cancelBuyOffer (kp, asset) {
   const { records } = await server.offers().forAccount(kp.publicKey()).call()
   const mine = records.filter(o =>
@@ -64,7 +62,7 @@ async function cancelBuyOffer (kp, asset) {
   if (mine.length === 0) return; // already filled (or never actually placed) by now
 
   const account = await server.loadAccount(kp.publicKey())
-  const builder = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: Networks.TESTNET })
+  const builder = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
   for (const offer of mine) {
     builder.addOperation(Operation.manageBuyOffer({
       selling: Asset.native(), buying: asset, buyAmount: '0', price: offer.price, offerId: offer.id,
@@ -76,16 +74,16 @@ async function cancelBuyOffer (kp, asset) {
 }
 
 /** Places a standing buy offer for the Agent's gate asset and resolves once {{{1
- * it's filled. If TG_TM_TIMEOUT_MS (or the tmTimeoutMs argument) is set and
- * the offer hasn't filled within that window, cancels it and rejects
- * instead of waiting forever -- an AbortController drives the timeout, the
- * same pattern daeh's matchTimeoutMs/relayTimeoutMs use. */
-export async function buyGrant (onLog = () => {}, tmTimeoutMs = process.env.TG_TM_TIMEOUT_MS
-  ? Number(process.env.TG_TM_TIMEOUT_MS) : undefined) {
-  const issuerPk = process.env.TG_TM_ISSUER_PK
-  if (!issuerPk) throw new Error('TG_TM_ISSUER_PK must be set (the Agents own Stellar public key)');
-  const kp = process.env.TG_TM_REQUESTOR_SK
-    ? Keypair.fromSecret(process.env.TG_TM_REQUESTOR_SK) : Keypair.random()
+ * it's filled. If TG_GRANT_TIMEOUT_MS (or the grantTimeoutMs argument) is
+ * set and the offer hasn't filled within that window, cancels it and
+ * rejects instead of waiting forever -- an AbortController drives the
+ * timeout, the same pattern daeh's matchTimeoutMs/relayTimeoutMs use. */
+export async function buyGrant (onLog = () => {}, grantTimeoutMs = process.env.TG_GRANT_TIMEOUT_MS
+  ? Number(process.env.TG_GRANT_TIMEOUT_MS) : undefined) {
+  const issuerPk = process.env.TG_ISSUER_PK
+  if (!issuerPk) throw new Error('TG_ISSUER_PK must be set (the Agents own Stellar public key)');
+  const kp = process.env.TG_REQUESTOR_SK
+    ? Keypair.fromSecret(process.env.TG_REQUESTOR_SK) : Keypair.random()
   const asset = new Asset(assetCode(), issuerPk)
 
   await ensureFunded(kp)
@@ -132,12 +130,12 @@ export async function buyGrant (onLog = () => {}, tmTimeoutMs = process.env.TG_T
       finish(resolve);
     })
 
-    const timeoutTimer = tmTimeoutMs == null ? undefined : setTimeout(() => {
-      onLog(`no fill within ${tmTimeoutMs}ms -- cancelling the buy offer`)
+    const timeoutTimer = grantTimeoutMs == null ? undefined : setTimeout(() => {
+      onLog(`no fill within ${grantTimeoutMs}ms -- cancelling the buy offer`)
       cancelBuyOffer(kp, asset)
         .catch(err => console.error('cancelBuyOffer failed', err))
-        .finally(() => finish(reject, new Error(`buyGrant(): no fill within ${tmTimeoutMs}ms`)))
-    }, tmTimeoutMs)
+        .finally(() => finish(reject, new Error(`buyGrant(): no fill within ${grantTimeoutMs}ms`)))
+    }, grantTimeoutMs)
 
     onLog(`buying 1 ${assetCode()} for ${price()} XLM (${kp.publicKey()})`)
     buy(kp, asset).catch(err => finish(reject, err))
