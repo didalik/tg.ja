@@ -6,7 +6,7 @@
 # walking up to the k2 root's own node_modules.
 ####
 
-PK ?=                       # the Agent's Stellar public key, published ahead of time
+PK ?= # the Agent's Stellar public key, published ahead of time
 TG_MATCH_TIMEOUT_MS ?= 30000
 TG_TM_TIMEOUT_MS ?= 30000
 
