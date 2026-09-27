@@ -13,7 +13,7 @@
 //                        discovered via the WS handshake, since the Agent
 //                        doesn't even connect to local/ws until after its
 //                        own gate opens.
-//   TG_TM_ASSET_CODE   -- optional, defaults to 'TGGATE' -- must match the Agent's
+//   TG_TM_ASSET_CODE   -- optional, defaults to 'TGA' -- must match the Agent's
 //   TG_TM_PRICE        -- optional, defaults to '1' -- must match the Agent's
 //   TG_TM_REQUESTOR_SK -- optional: reuse a specific Stellar identity instead
 //                        of generating (and funding) a fresh one each run
@@ -27,7 +27,7 @@ import { effectsCursorNow, ensureFunded, pollForTrade, server } from './stellar.
 
 const BASE_FEE = '100000'
 
-function assetCode () { return process.env.TG_TM_ASSET_CODE ?? 'TGGATE'; }
+function assetCode () { return process.env.TG_TM_ASSET_CODE ?? 'TGA'; }
 function price () { return process.env.TG_TM_PRICE ?? '1'; }
 
 async function trust (kp, asset) { // {{{1
