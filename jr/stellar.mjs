@@ -1,4 +1,4 @@
-// tg/ja/public/jr/stellar.mjs -- shared Stellar network plumbing for the
+// tg/ja/public/jr/stellar.mjs -- shared Stellar network plumbing for the {{{1
 // Toll Gate's gate mechanism: tg/ja/gate.js (the seller/gatekeeper,
 // reaching in from the root k2 repo -- the Agent isn't meant to be
 // independently cloneable, so this lives here once rather than as a
@@ -11,9 +11,9 @@
 //                         run against testnet; prod moves to 'public'
 //                         (mainnet) once the toll-gate flow is proven there.
 
-import { Horizon, Networks } from '@stellar/stellar-sdk'
+import { Horizon, Networks } from '@stellar/stellar-sdk' // {{{1
 
-const NETWORKS = {
+const NETWORKS = { // {{{1
   testnet: {
     horizonUrl: 'https://horizon-testnet.stellar.org',
     passphrase: Networks.TESTNET,
@@ -46,14 +46,16 @@ export async function ensureFunded (kp) { // {{{1
   }
 }
 
+//export async function effectsCursorNow (pk) {{{1
 /** The paging_token of the most recent existing effect on `pk`, or '0' if
  * there are none yet -- the REST equivalent of a stream's cursor('now'):
- * pollForTrade only ever looks at effects strictly after this point. {{{1 */
+ * pollForTrade only ever looks at effects strictly after this point. */
 export async function effectsCursorNow (pk) {
   const { records } = await server.effects().forAccount(pk).order('desc').limit(1).call()
   return records[0]?.paging_token ?? '0';
 }
 
+//export function pollForTrade (pk, since, matches, onFound, intervalMs = 5000) {{{1
 /** Fallback for grant()/buyGrant(): Horizon's effects SSE stream has been
  * observed, live, to silently stop delivering events -- a real trade
  * executed and was visible via Horizon's own REST API, but neither the SDK's
@@ -61,7 +63,7 @@ export async function effectsCursorNow (pk) {
  * ever received it. Polls the same account's effects over plain REST as a
  * belt-and-braces fallback, so a dead/stalled stream can't hang a grant
  * forever. Call stop() once whichever side (this or the stream) wins to
- * cancel the other. {{{1 */
+ * cancel the other. */
 export function pollForTrade (pk, since, matches, onFound, intervalMs = 5000) {
   let stopped = false
   let cursor = since

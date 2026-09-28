@@ -3,7 +3,7 @@
 // tg/ja/public/jr/run.js -- the Toll Gate's Job Requester: does the gate {{{1
 // trade, waits to be matched, sends one message, and prints back whatever
 // `ja`'s echo job sends in reply -- the whole point is proving the
-// toll-gate wiring (gate -> tg/ws match -> grant -> job relay) works
+// toll-gate wiring (gate -> tg/ws match -> job relay) works
 // end to end against `daeh` directly, not the job itself.
 //
 // Imports daeh directly by relative path -- daeh isn't published yet, but
@@ -17,7 +17,7 @@
 //
 // Env:
 //   TG_WS_URL          -- optional, defaults to the qa deploy
-//   TG_REQUESTOR_NAME  -- optional, defaults to 'jr'
+//   TG_JR_NAME  -- optional, defaults to 'jr'
 //   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js). If
 //                         unset, the gate trade is skipped entirely
 //                         (dev/test only) -- for real use this should
@@ -29,12 +29,13 @@
 //                         within this long, once the gate trade (if any) has
 //                         already gone through.
 
-import WebSocket from 'ws'
+import WebSocket from 'ws' // {{{1
 import { generate_keypair } from '../../../../daeh/lib/sdk.js'
 import { job } from '../../../../daeh/lib/job.ts'
 import { buyGrant } from './gate.js'
 
-/** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox {{{1
+//function makeOutbox () {{{1
+/** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox
  * (inside daeh's job()) pulls them one at a time once matched. Blocks
  * forever once the queue is drained -- fine here, there's nothing more to
  * say after the sentinel. */
@@ -58,7 +59,7 @@ async function main () { // {{{1
 
   const actor = {
     app: 'jr',
-    iss: { name: process.env.TG_REQUESTOR_NAME ?? 'jr', pk },
+    iss: { name: process.env.TG_JR_NAME ?? 'jr', pk },
     sk,
     WebSocket,
     wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'],
@@ -98,7 +99,7 @@ async function main () { // {{{1
   console.log('[jr]', step.value.message)
 }
 
-main().catch(e => {
+main().catch(e => { // {{{1
   console.error('[jr] FAILED', e)
   process.exitCode = 1
 })
