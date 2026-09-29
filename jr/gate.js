@@ -25,7 +25,7 @@
 import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } // {{{1
 from '@stellar/stellar-sdk'
 import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
-from './stellar.mjs'
+from '../../../../daeh/lib/stellar.mjs'
 
 function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; } // {{{1
 
