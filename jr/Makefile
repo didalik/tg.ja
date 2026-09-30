@@ -18,5 +18,5 @@ jr:
 	TG_ISSUER_PK='${PK}' \
 	TG_GRANT_TIMEOUT_MS='${TG_GRANT_TIMEOUT_MS}' \
 	TG_MATCH_TIMEOUT_MS='${TG_MATCH_TIMEOUT_MS}' \
-	node run.js
+	node run.js &
 	echo $@ DONE;echo
