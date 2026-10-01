@@ -18,10 +18,15 @@
 // Env:
 //   TG_WS_URL          -- optional, defaults to the qa deploy
 //   TG_JR_NAME  -- optional, defaults to 'jr'
-//   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js). If
-//                         unset, the gate trade is skipped entirely
-//                         (dev/test only) -- for real use this should
-//                         always be set.
+//   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js).
+//                         Optional -- if unset, fetched from the registry
+//                         (see TG_JA_REGISTRY_URL) instead. If *that's* also
+//                         empty (nothing registered), the gate trade is
+//                         skipped entirely (dev/test only).
+//   TG_JA_REGISTRY_URL     -- optional, defaults to the qa ja deploy: where
+//                         to look up /jr/registry (see ja/src/util.mjs's
+//                         registryHandler) when TG_ISSUER_PK isn't set
+//                         directly.
 //   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
 //                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
@@ -65,11 +70,25 @@ async function main () { // {{{1
     wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'],
   }
 
+  if (process.env.TG_JA_REGISTRY_URL) {
+    const siteUrl = process.env.TG_JA_REGISTRY_URL //?? 'https://qa.ja.tg.kloudoftrust.org'
+    const res = await fetch(`${siteUrl}`)
+    if (res.ok) {
+      const entry = await res.json()
+      process.env.TG_ISSUER_PK = entry.issuerPk
+      if (entry.assetCode) process.env.TG_ASSET_CODE = entry.assetCode
+      if (entry.price) process.env.TG_PRICE = entry.price
+      console.log('[jr] registry: found', entry)
+    } else {
+      console.log(`[jr] registry: no entry (${siteUrl}/jr/registry -> ${res.status})`)
+    }
+  }
+
   if (process.env.TG_ISSUER_PK) {
     await buyGrant(line => console.log('[jr] gate:', line))
     console.log('[jr] gate grant confirmed')
   } else {
-    console.log('[jr] TG_ISSUER_PK not set -- gating skipped (dev/test only)')
+    console.log('[jr] TG_ISSUER_PK not set (directly or via the registry) -- gating skipped (dev/test only)')
   }
 
   const outbox = makeOutbox()
