@@ -16,17 +16,18 @@
 // goal, not re-solving "standalone clone" for jr too.)
 //
 // Env:
-//   TG_WS_URL          -- optional, defaults to the qa deploy
-//   TG_JR_NAME  -- optional, defaults to 'jr'
+//   TG_WS_URL          -- optional, defaults to the qa deploy. Also used,
+//                         httpized (see daeh/lib/util.mjs's httpize), to
+//                         derive the registry URL below -- a browser-based
+//                         jr (planned, not yet built) would do the exact
+//                         same derivation from whatever ws(s):// URL it
+//                         already has, no separate file/URL needed.
+//   TG_JR_NAME         -- optional, defaults to 'jr'
 //   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js).
 //                         Optional -- if unset, fetched from the registry
-//                         (see TG_JA_REGISTRY_URL) instead. If *that's* also
-//                         empty (nothing registered), the gate trade is
-//                         skipped entirely (dev/test only).
-//   TG_JA_REGISTRY_URL     -- optional, defaults to the qa ja deploy: where
-//                         to look up /jr/registry (see ja/src/util.mjs's
-//                         registryHandler) when TG_ISSUER_PK isn't set
-//                         directly.
+//                         instead. If *that's* also empty (nothing
+//                         registered), the gate trade is skipped entirely
+//                         (dev/test only).
 //   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
 //                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
@@ -37,6 +38,7 @@
 import WebSocket from 'ws' // {{{1
 import { generate_keypair } from '../../../../daeh/lib/sdk.js'
 import { job } from '../../../../daeh/lib/job.ts'
+import { httpize } from '../../../../daeh/lib/util.mjs'
 import { buyGrant } from './gate.js'
 
 //function makeOutbox () {{{1
@@ -62,17 +64,18 @@ function makeOutbox () {
 async function main () { // {{{1
   const [sk, pk] = (await generate_keypair.call(globalThis.crypto.subtle)).split(' ')
 
+  const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
   const actor = {
     app: 'jr',
     iss: { name: process.env.TG_JR_NAME ?? 'jr', pk },
     sk,
     WebSocket,
-    wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'],
+    wsArgs: [wsUrl],
   }
 
-  if (process.env.TG_JA_REGISTRY_URL) {
-    const siteUrl = process.env.TG_JA_REGISTRY_URL //?? 'https://qa.ja.tg.kloudoftrust.org'
-    const res = await fetch(`${siteUrl}`)
+  if (!process.env.TG_ISSUER_PK) {
+    const registryUrl = `${httpize(wsUrl)}/registry`
+    const res = await fetch(registryUrl)
     if (res.ok) {
       const entry = await res.json()
       process.env.TG_ISSUER_PK = entry.issuerPk
@@ -80,7 +83,7 @@ async function main () { // {{{1
       if (entry.price) process.env.TG_PRICE = entry.price
       console.log('[jr] registry: found', entry)
     } else {
-      console.log(`[jr] registry: no entry (${siteUrl}/jr/registry -> ${res.status})`)
+      console.log(`[jr] registry: no entry (${registryUrl} -> ${res.status})`)
     }
   }
 
