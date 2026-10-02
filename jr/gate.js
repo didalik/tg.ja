@@ -77,12 +77,29 @@ async function cancelBuyOffer (kp, asset) {
   await server.submitTransaction(tx)
 }
 
+//export async function submitPod (xdr, kp) {{{1
+/** Co-signs (with this Requester's own key) the Proof of Delivery XDR the
+ * Agent relayed at match time, and submits it -- see tg/ja/gate.js's
+ * buildPod for the Agent's half and ccddh.md's PoP/PoD design note. The
+ * transaction's own source is this Requester's account (see buildPod), so
+ * this signature is what actually lets it go through; the clawback
+ * operation itself only needed the Issuer's, already on the XDR. Returns
+ * the submitted transaction's hash -- the PoD's own on-chain id. */
+export async function submitPod (xdr, kp) {
+  const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase)
+  tx.sign(kp)
+  const result = await server.submitTransaction(tx)
+  return result.hash;
+}
+
 //export async function buyGrant {{{1
-/** Places a standing buy offer for the Agent's gate asset and resolves once
- * it's filled. If TG_GRANT_TIMEOUT_MS (or the grantTimeoutMs argument) is
- * set and the offer hasn't filled within that window, cancels it and
- * rejects instead of waiting forever -- an AbortController drives the
- * timeout, the same pattern daeh's matchTimeoutMs/relayTimeoutMs use. */
+/** Places a standing buy offer for the Agent's gate asset and resolves,
+ * once it's filled, with the Stellar keypair used for the trade -- the
+ * Requester needs it again later, to co-sign the PoD (see submitPod). If
+ * TG_GRANT_TIMEOUT_MS (or the grantTimeoutMs argument) is set and the
+ * offer hasn't filled within that window, cancels it and rejects instead
+ * of waiting forever -- an AbortController drives the timeout, the same
+ * pattern daeh's matchTimeoutMs/relayTimeoutMs use. */
 export async function buyGrant (
   onLog = () => {}, 
   grantTimeoutMs = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS)
@@ -124,7 +141,7 @@ export async function buyGrant (
         // on it is unambiguously this offer filling, no amount check needed.
         if (effect.type !== 'trade') return;
         onLog('grant confirmed -- trade filled')
-        finish(resolve);
+        finish(resolve, kp);
       },
       onerror: err => finish(reject, err),
     })
@@ -134,7 +151,7 @@ export async function buyGrant (
     // just via a different mechanism -- this covers it regardless of cause).
     const stopPoll = pollForTrade(kp.publicKey(), since, () => true, () => {
       onLog('grant confirmed -- trade filled [via poll fallback]')
-      finish(resolve);
+      finish(resolve, kp);
     })
 
     const timeoutTimer = grantTimeoutMs == null ? undefined : setTimeout(() => {

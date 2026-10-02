@@ -2,23 +2,44 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ja</title>
+    <title>ja -- Toll-Gated Jobs</title>
     <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
 <div id='div1'>
-    <h3>FOR DEVS AND TESTERS ONLY</h3>
-This page is a browser-based Job Requester (<b>jr</b>) for the Toll Gate's <b>ja</b> Job Agent --
-a live test of the same wiring <code>tg/ja/public/jr/run.js</code> already proves from Node:
-<ul>
-  <li>discover the Agent's Stellar issuer PK from <b>ja</b>'s own job registry;</li>
-  <li>place the matching Stellar DEX trade to open the toll gate;</li>
-  <li>connect over WebSocket, get matched with the Agent, and run the <code>echo</code> job.</li>
-</ul>
+    <h3>Toll-Gated Jobs, Settled on Stellar</h3>
 <p>
-See <a href='https://github.com/didalik/k2' target='_blank'>k2</a>'s <code>tg/</code> directory and
-<a href='https://github.com/didalik/k2' target='_blank'>daeh</a> for the code.
+No API keys, no accounts, no subscriptions. A Job Agent -- <b>ja</b>, running this page -- issues
+its own small asset on the Stellar network and sells one unit of it at a fixed price, the way a
+toll booth sells passage. Any Job Requester who buys it has paid the toll; the Stellar DEX trade
+that does the buying <i>is</i> the receipt, a public, timestamped <b>Proof of Purchase</b> (PoP)
+that costs nothing extra to produce, because the network already produces it as a side effect of
+the trade itself.
+</p>
+<p>
+Paying the toll gets you matched with the Agent over a WebSocket, relayed through a single
+Cloudflare Durable Object using the <a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets' target='_blank'>Hibernation API</a> --
+the connection can sit open through an entire job without the Agent paying for idle compute
+between messages. That's what makes a toll gate like this work at small scale: many short,
+intermittent jobs, each one billed in fractions of a Stellar fee and a few milliseconds of
+Worker execution, never in always-on server time.
+</p>
+<p>
+Delivery gets its own receipt. Before the job even starts, the Agent builds and signs a second
+Stellar transaction -- one that claws back the very token that opened the gate -- and hands it to
+the Requester over the same WebSocket. The Requester holds onto it, lets the job run, and only
+submits it once satisfied: a deliberate, self-funded action that becomes <b>Proof of Delivery</b>
+(PoD) the moment it lands on-chain. Two Stellar transactions, PoP and PoD, bookend every job --
+no escrow, no dispute process, no third party in the middle.
+</p>
+<p>
+This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it looks up the
+Agent's current issuer key, places the matching Stellar trade, gets matched over WebSocket, runs
+a trivial echo job, and submits the Proof of Delivery once it's done. The client-side protocol --
+the WebSocket handshake, job matching, and relay -- is
+<a href='https://www.npmjs.com/package/daeh' target='_blank'>daeh</a>, on its way to becoming a
+standalone npm package.
 </p><hr/>
 <p id='content1'>
 </p>

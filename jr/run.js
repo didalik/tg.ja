@@ -39,7 +39,7 @@ import WebSocket from 'ws' // {{{1
 import { generate_keypair } from '../../../../daeh/lib/sdk.js'
 import { job } from '../../../../daeh/lib/job.ts'
 import { httpize } from '../../../../daeh/lib/util.mjs'
-import { buyGrant } from './gate.js'
+import { buyGrant, submitPod } from './gate.js'
 
 //function makeOutbox () {{{1
 /** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox
@@ -87,8 +87,9 @@ async function main () { // {{{1
     }
   }
 
+  let requesterKp
   if (process.env.TG_ISSUER_PK) {
-    await buyGrant(line => console.log('[jr] gate:', line))
+    requesterKp = await buyGrant(line => console.log('[jr] gate:', line))
     console.log('[jr] gate grant confirmed')
   } else {
     console.log('[jr] TG_ISSUER_PK not set (directly or via the registry) -- gating skipped (dev/test only)')
@@ -102,6 +103,7 @@ async function main () { // {{{1
     aud: 'echo', label: 'Echo', outbox,
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
   })
+  let podXdr // the Agent's first relayed message, a 'POD:'-prefixed clawback XDR -- see tg/ja/run.js
   let step = await gen.next()
   while (!step.done) {
     const event = step.value
@@ -112,13 +114,32 @@ async function main () { // {{{1
     } else if (event.type === 'output') {
       console.log('[jr] sent:', event.line)
     } else if (event.type === 'message') {
-      console.log('[jr] echo reply:', event.payload.sub)
+      let sub = event.payload.sub
+      if (!podXdr && sub.startsWith('POD:')) {
+        // The relay is a raw byte stream with no message framing of its
+        // own (confirmed live: jr's own two pushed lines, and even this
+        // PoD prefix, can arrive concatenated into a single chunk rather
+        // than as separate messages) -- XDR is base64, which can't contain
+        // a literal newline, so the prefix's own trailing \n is what
+        // actually delimits it from anything arriving glued onto the same
+        // chunk, not the chunk boundary itself.
+        const nl = sub.indexOf('\n')
+        podXdr = nl === -1 ? sub.slice(4) : sub.slice(4, nl)
+        console.log('[jr] received PoD XDR')
+        sub = nl === -1 ? '' : sub.slice(nl + 1)
+      }
+      if (sub) console.log('[jr] echo reply:', sub)
     } else if (event.type === 'error') {
       console.error('[jr] job error:', event.error)
     }
     step = await gen.next()
   }
   console.log('[jr]', step.value.message)
+
+  if (podXdr && requesterKp) {
+    const txId = await submitPod(podXdr, requesterKp)
+    console.log(`PoD-TXID: ${txId}`) // bare, no [jr] prefix -- meant to be parsed later
+  }
 }
 
 main().catch(e => { // {{{1
