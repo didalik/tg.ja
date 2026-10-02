@@ -8,7 +8,7 @@
 
 .ONESHELL:
 
-ENV ?= dev# | qa | prod"
+ENV ?= dev# | qa | prod
 SHELL := /bin/bash
 TG_MATCH_TIMEOUT_MS ?= 30000
 TG_GRANT_TIMEOUT_MS ?= 30000
