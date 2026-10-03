@@ -104,6 +104,9 @@ async function main () { // {{{1
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
   })
   let podXdr // the Agent's first relayed message, a 'POD:'-prefixed clawback XDR -- see tg/ja/run.js
+  let jobError // set on a daeh 'error' event (e.g. match/relay timeout) -- thrown below
+  // instead of just logged, so an unattended run (the nightly BIT) actually
+  // exits non-zero on failure rather than silently "succeeding".
   let step = await gen.next()
   while (!step.done) {
     const event = step.value
@@ -131,10 +134,12 @@ async function main () { // {{{1
       if (sub) console.log('[jr] echo reply:', sub)
     } else if (event.type === 'error') {
       console.error('[jr] job error:', event.error)
+      jobError = event.error
     }
     step = await gen.next()
   }
   console.log('[jr]', step.value.message)
+  if (jobError) throw jobError;
 
   if (podXdr && requesterKp) {
     const txId = await submitPod(podXdr, requesterKp)
