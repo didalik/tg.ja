@@ -50,7 +50,7 @@ async function main () { // {{{1
   // Object exactly the way Node jr's TG_WS_URL does, just same-origin
   // instead of direct.
   const wsUrl = wsize(location.href)
-  out(`wsUrl: ${wsUrl}`)
+  //out(`wsUrl: ${wsUrl}`)
 
   const [sk, pk] = (await generate_keypair.call(crypto.subtle)).split(' ')
   const actor = {

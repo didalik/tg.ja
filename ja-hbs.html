@@ -12,10 +12,16 @@
 <p>
 No API keys, no accounts, no subscriptions. A Job Agent -- <b>ja</b>, running this page -- issues
 its own small asset on the Stellar network and sells one unit of it at a fixed price, the way a
-toll booth sells passage. Any Job Requester who buys it has paid the toll; the Stellar DEX trade
+toll booth sells passage. Any Job Requester who buys it has paid the toll; the Stellar trade
 that does the buying <i>is</i> the receipt, a public, timestamped <b>Proof of Purchase</b> (PoP)
 that costs nothing extra to produce, because the network already produces it as a side effect of
 the trade itself.
+This <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a>-based semaphore
+also takes care of gating/queueing multiple Requesters one at a time -- even without a public IP
+of its own (a laptop behind a home router -- or even an Android phone with <a href='https://termux.dev/en/' target='_blank'>Termux</a> -- is enough), 
+the Agent stays reachable 24/7, because it
+only ever makes outbound connections, to Stellar and to Cloudflare -- nothing needs to connect
+into it.
 </p>
 <p>
 Paying the toll gets you matched with the Agent over a WebSocket, relayed through a single
@@ -26,7 +32,7 @@ intermittent jobs, each one billed in fractions of a Stellar fee and a few milli
 Worker execution, never in always-on server time.
 </p>
 <p>
-Delivery gets its own receipt. Before the job even starts, the Agent builds and signs a second
+Delivery gets its own on-chain receipt. Before the job even starts, the Agent builds and signs a second
 Stellar transaction -- one that claws back the very token that opened the gate -- and hands it to
 the Requester over the same WebSocket. The Requester holds onto it, lets the job run, and only
 submits it once satisfied: a deliberate, self-funded action that becomes <b>Proof of Delivery</b>
