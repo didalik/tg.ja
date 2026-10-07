@@ -52,7 +52,7 @@ async function main () { // {{{1
   const wsUrl = wsize(location.href)
   //out(`wsUrl: ${wsUrl}`)
 
-  const [sk, pk] = (await generate_keypair.call(crypto.subtle)).split(' ')
+  const [sk, pk] = (await generate_keypair()).split(' ')
   const actor = {
     app: 'jr',
     iss: { name: 'jr', pk },

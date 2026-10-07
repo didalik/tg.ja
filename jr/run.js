@@ -62,7 +62,7 @@ function makeOutbox () {
 }
 
 async function main () { // {{{1
-  const [sk, pk] = (await generate_keypair.call(globalThis.crypto.subtle)).split(' ')
+  const [sk, pk] = (await generate_keypair()).split(' ')
 
   const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
   const actor = {
