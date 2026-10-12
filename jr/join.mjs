@@ -18,7 +18,9 @@
 //
 // Env (direct CLI use):
 //   TG_ISSUER_PK   -- required: the target JA's own Stellar public key
-//   TG_ASSET_CODE, TG_PRICE, TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js.
+//   TG_ASSET_CODE  -- optional, defaults to 'JOIN' (this Job's own fixed
+//                     selector -- see requestJoin()'s own comment)
+//   TG_PRICE, TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js.
 //                     Setting TG_JR_SK up front (rather than letting
 //                     buyGrant() generate one) is what makes this script's
 //                     own CSR/OU and the gate-trade identity the same
@@ -99,7 +101,12 @@ function restoreEnv (prev) { // {{{1
  * one-request-at-a-time use), then sends {kind, csr, network, email} and
  * returns the Agent's parsed JSON reply. */
 export async function requestJoin ({
-  issuerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja', assetCode, price,
+  // One asset per Job (ccddh.md): 'JOIN' is this Job's own fixed selector,
+  // unlike the issuer PK (which legitimately varies per JA), so it
+  // defaults here rather than falling through to gate.js's generic 'TGA'.
+  // This also closes round 35's "accepted sharp edge" -- forwarding no
+  // longer needs JOIN_ROOT_ASSET_CODE set at all to get this right.
+  issuerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja', assetCode = 'JOIN', price,
   kind = 'cert', csr, network, email, matchTimeoutMs, onLog = () => {},
 }) {
   const prev = {
@@ -108,7 +115,7 @@ export async function requestJoin ({
     TG_PRICE: process.env.TG_PRICE,
   }
   process.env.TG_ISSUER_PK = issuerPk
-  if (assetCode) process.env.TG_ASSET_CODE = assetCode
+  process.env.TG_ASSET_CODE = assetCode
   if (price) process.env.TG_PRICE = price
   let kp
   try {

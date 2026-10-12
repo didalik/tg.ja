@@ -64,6 +64,12 @@ function makeOutbox () {
 async function main () { // {{{1
   const [sk, pk] = (await generate_keypair()).split(' ')
 
+  // One asset per Job, not a shared 'TGA' (ccddh.md) -- 'ECHO' is this
+  // one's own fixed selector. Only a default: an explicit TG_ISSUER_PK
+  // (bypassing the registry lookup below) still needs this, since the
+  // registry's own entry.assetCode is what normally provides it instead.
+  process.env.TG_ASSET_CODE ??= 'ECHO'
+
   const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
   const actor = {
     app: 'jr',
