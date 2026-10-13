@@ -77,16 +77,25 @@ async function cancelBuyOffer (kp, asset) {
   await server.submitTransaction(tx)
 }
 
-//export async function submitPod (xdr, kp) {{{1
-/** Co-signs (with this Requester's own key) the Proof of Delivery XDR the
- * Agent relayed at match time, and submits it -- see tg/ja/gate.js's
- * buildPod for the Agent's half and ccddh.md's PoP/PoD design note. The
- * transaction's own source is this Requester's account (see buildPod), so
- * this signature is what actually lets it go through; the clawback
- * operation itself only needed the Issuer's, already on the XDR. Returns
- * the submitted transaction's hash -- the PoD's own on-chain id. */
-export async function submitPod (xdr, kp) {
-  const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase)
+//export async function payBack (kp) {{{1
+/** Proof of Delivery, redefined (ccddh.md): once the Job is done, the
+ * Requester just pays the Agent back the amount of the gate asset it was
+ * sold to start the Job -- an ordinary Payment, not a clawback co-signed
+ * from a transaction the Agent had to build. Works the same way whether
+ * the Agent is the asset's real issuer or a reseller (ccddh.md's "Job
+ * Owners"/RTOJ rounds) -- only an issuer can clawback, but anyone can
+ * receive a payment, so this needs nothing from the Agent at all beyond
+ * its own public key (already known -- TG_ISSUER_PK, same one buyGrant()
+ * bought from). Escalation (what happens if this never arrives) isn't
+ * built -- the asset stays clawback-enabled for that, postponed on
+ * purpose. Returns the submitted transaction's hash. */
+export async function payBack (kp) {
+  const issuerPk = process.env.TG_ISSUER_PK
+  const asset = new Asset(assetCode(), issuerPk)
+  const account = await server.loadAccount(kp.publicKey())
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
+    .addOperation(Operation.payment({ destination: issuerPk, asset, amount: '1' }))
+    .setTimeout(60).build()
   tx.sign(kp)
   const result = await server.submitTransaction(tx)
   return result.hash;
@@ -95,7 +104,8 @@ export async function submitPod (xdr, kp) {
 //export async function buyGrant {{{1
 /** Places a standing buy offer for the Agent's gate asset and resolves,
  * once it's filled, with the Stellar keypair used for the trade -- the
- * Requester needs it again later, to co-sign the PoD (see submitPod). If
+ * Requester needs it again later, to pay the gate asset back (see
+ * payBack) once the Job is done. If
  * TG_GRANT_TIMEOUT_MS (or the grantTimeoutMs argument) is set and the
  * offer hasn't filled within that window, cancels it and rejects instead
  * of waiting forever -- an AbortController drives the timeout, the same

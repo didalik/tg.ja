@@ -50,7 +50,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import WebSocket from 'ws'
 import { generate_keypair } from '../../../../daeh/lib/sdk.js'
 import { job } from '../../../../daeh/lib/job.ts'
-import { buyGrant } from './gate.js'
+import { buyGrant, payBack } from './gate.js'
 
 const execFileP = promisify(execFile)
 
@@ -117,33 +117,42 @@ export async function requestJoin ({
   process.env.TG_ISSUER_PK = issuerPk
   process.env.TG_ASSET_CODE = assetCode
   if (price) process.env.TG_PRICE = price
-  let kp
+  // One try/finally around the whole flow, not just buyGrant() -- payBack()
+  // below reads these same env vars, and needs them still set when it runs,
+  // not restored to whatever they were before this call.
   try {
-    kp = await buyGrant(onLog)
+    const kp = await buyGrant(onLog)
+    onLog('gate grant confirmed')
+
+    const actor = {
+      app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
+    }
+    const outbox = makeOutbox()
+    outbox.push(JSON.stringify({ kind, csr, network, email }))
+    outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
+
+    const gen = job(actor, { aud: 'join', label: 'Join', outbox, matchTimeoutMs })
+    let reply, jobError
+    let step = await gen.next()
+    while (!step.done) {
+      const event = step.value
+      if (event.type === 'message') reply = JSON.parse(event.payload.sub)
+      else if (event.type === 'error') jobError = event.error
+      step = await gen.next()
+    }
+    if (jobError) throw jobError;
+    if (!reply) throw new Error('requestJoin(): no reply received');
+
+    // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to
+    // whoever we bought it from, now that the Job is done -- same
+    // unilateral payment jr's own echo BIT uses, works the same way
+    // whether issuerPk is the real Owner or a reseller.
+    const txId = await payBack(kp)
+    onLog(`PoD-TXID: ${txId}`)
+    return reply;
   } finally {
     restoreEnv(prev)
   }
-  onLog('gate grant confirmed')
-
-  const actor = {
-    app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
-  }
-  const outbox = makeOutbox()
-  outbox.push(JSON.stringify({ kind, csr, network, email }))
-  outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
-
-  const gen = job(actor, { aud: 'join', label: 'Join', outbox, matchTimeoutMs })
-  let reply, jobError
-  let step = await gen.next()
-  while (!step.done) {
-    const event = step.value
-    if (event.type === 'message') reply = JSON.parse(event.payload.sub)
-    else if (event.type === 'error') jobError = event.error
-    step = await gen.next()
-  }
-  if (jobError) throw jobError;
-  if (!reply) throw new Error('requestJoin(): no reply received');
-  return reply;
 }
 
 async function main () { // {{{1

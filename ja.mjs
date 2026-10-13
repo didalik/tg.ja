@@ -2,7 +2,7 @@ import { put, reset, } from './lib/util.mjs' // {{{1
 import { generate_keypair, } from '../../../daeh/lib/sdk.js'
 import { job, } from '../../../daeh/lib/job.ts'
 import { httpize, wsize, } from '../../../daeh/lib/util.mjs'
-import { buyGrant, submitPod, } from './jr/gate.js'
+import { buyGrant, payBack, } from './jr/gate.js'
 
 // gate.js/stellar.mjs read process.env.* (TG_ISSUER_PK, TG_ASSET_CODE, {{{1
 // TG_PRICE, TG_GRANT_TIMEOUT_MS, TG_STELLAR_NETWORK, ...) -- same trick
@@ -95,7 +95,6 @@ async function main () { // {{{1
     aud: 'echo', label: 'Echo', outbox,
     matchTimeoutMs: 30_000,
   })
-  let podXdr // the Agent's first relayed message, a 'POD:'-prefixed clawback XDR -- see tg/ja/run.js
   let step = await gen.next()
   while (!step.done) {
     const event = step.value
@@ -106,21 +105,7 @@ async function main () { // {{{1
     } else if (event.type === 'output') {
       out(`sent: ${event.line}`)
     } else if (event.type === 'message') {
-      let sub = event.payload.sub
-      if (!podXdr && sub.startsWith('POD:')) {
-        // The relay is a raw byte stream with no message framing of its
-        // own (confirmed live, both here and from Node jr: jr's own two
-        // pushed lines, and even this PoD prefix, can arrive concatenated
-        // into a single chunk rather than as separate messages) -- XDR is
-        // base64, which can't contain a literal newline, so the prefix's
-        // own trailing \n is what actually delimits it from anything
-        // arriving glued onto the same chunk, not the chunk boundary itself.
-        const nl = sub.indexOf('\n')
-        podXdr = nl === -1 ? sub.slice(4) : sub.slice(4, nl)
-        out('received PoD XDR')
-        sub = nl === -1 ? '' : sub.slice(nl + 1)
-      }
-      if (sub) out(`echo reply: ${sub}`)
+      out(`echo reply: ${event.payload.sub}`)
     } else if (event.type === 'error') {
       out(`job error: ${event.error}`)
     }
@@ -128,8 +113,11 @@ async function main () { // {{{1
   }
   out(step.value.message)
 
-  if (podXdr && requesterKp) {
-    const txId = await submitPod(podXdr, requesterKp)
+  // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to
+  // the Agent now that the Job is done, unilaterally -- no XDR from the
+  // Agent needed any more, same as Node jr's own run.js.
+  if (requesterKp) {
+    const txId = await payBack(requesterKp)
     out(`PoD-TXID: ${txId}`) // bare, meant to be parsed later
   }
 }
