@@ -24,3 +24,9 @@ jr:
 		node run.js &
 	fi
 	echo $@ DONE;echo
+
+.PHONY: join-cert # {{{1
+join-cert:
+	@echo $@ started on $$(date)
+	echo '- this completes BIT 2 for ${WHOAMI}'
+	echo $@ DONE;echo
