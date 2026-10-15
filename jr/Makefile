@@ -9,15 +9,26 @@
 .ONESHELL:
 
 ENV ?= dev# | qa | prod
+JOB ?= echo# | join -- which Requester script this Makefile drives (ccddh.md's
+# "join Use Case BITs as templates" round): run.js (echo) auto-discovers
+# TG_ISSUER_PK from the registry if unset, but join.mjs (join) has no
+# registry entry of its own to discover (the registry is one slot per
+# smName, not per-aud -- see register.js's own header) and always needs
+# TG_ISSUER_PK/JOIN_EMAIL set explicitly by the caller, same as before this
+# dispatcher existed.
 SHELL := /bin/bash
 TG_MATCH_TIMEOUT_MS ?= 30000
 TG_GRANT_TIMEOUT_MS ?= 30000
 
 .PHONY: jr # {{{1
 jr:
-	@echo $@ started on $$(date)
+	@echo $@ started on $$(date) JOB=${JOB}
 	if [ '${ENV}' = 'dev' ]; then
 		ssh alec@mba "open $$TG_JA_URL" &
+	elif [ '${JOB}' = 'join' ]; then
+		TG_GRANT_TIMEOUT_MS='${TG_GRANT_TIMEOUT_MS}' \
+		TG_MATCH_TIMEOUT_MS='${TG_MATCH_TIMEOUT_MS}' \
+		node join.mjs &
 	else
 		TG_GRANT_TIMEOUT_MS='${TG_GRANT_TIMEOUT_MS}' \
 		TG_MATCH_TIMEOUT_MS='${TG_MATCH_TIMEOUT_MS}' \
