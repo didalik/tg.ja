@@ -40,6 +40,6 @@ jr:
 join-cert:
 	@echo $@ started on $$(date)
 	echo '- paste the cert here to validate and store it:'
-	cat | node join.mjs cert
+	cat | node join.mjs '${WHOAMI}'
 	echo '- this completes BIT 2 for ${WHOAMI}'
 	echo $@ DONE;echo
