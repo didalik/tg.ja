@@ -17,7 +17,8 @@
 // original CSR through unchanged.
 //
 // Env (direct CLI use):
-//   TG_ISSUER_PK   -- required: the target JA's own Stellar public key
+//   TG_ISSUER_PK   -- required for the default (CSR-request) mode: the
+//                     target JA's own Stellar public key
 //   TG_ASSET_CODE  -- optional, defaults to 'JOIN' (this Job's own fixed
 //                     selector -- see requestJoin()'s own comment)
 //   TG_PRICE, TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js.
@@ -26,7 +27,9 @@
 //                     own CSR/OU and the gate-trade identity the same
 //                     stable keypair (round 20's MRT design, same as sh's
 //                     E/P/F) instead of jr's own 'echo' BIT's two separate,
-//                     disposable ones.
+//                     disposable ones. Required for `cert` mode too (see
+//                     below) -- it's what finds the matching private key
+//                     the pasted-back certificate has to validate against.
 //   TG_WS_URL      -- optional, defaults to the qa deploy
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000
 //   JOIN_NETWORK   -- optional, defaults to 'testnet' -- Дід Alik's own
@@ -34,15 +37,44 @@
 //   JOIN_EMAIL     -- required: where the issued cert should be sent
 //   JOIN_CN        -- optional, defaults to 'join-<shortid>' -- the CSR's
 //                     own CN field
-//   JOIN_CERT_DIR  -- optional, defaults to a fresh temp dir -- where the
-//                     generated keypair/CSR are written. This directory
-//                     (not the CSR alone) is what to keep once a cert
-//                     comes back, the same as E/P/F's own
-//                     ~/.config/.cloudflare-job-fair/<name>/ layout.
+//   JOIN_CERT_DIR  -- optional, defaults to this identity's own
+//                     ~/.config/.cloudflare-job-fair/<pk>/ (same PK-keyed
+//                     layout as E/P/F's own certs, ccddh.md's "Keys and
+//                     Certificates local storage, Redefined") -- where the
+//                     generated keypair/CSR are written, and where `cert`
+//                     mode (below) later looks for that same keypair once
+//                     the signed certificate comes back.
+//
+// Usage:
+//   node join.mjs        -- default mode: generate a CSR, request `join`,
+//                            print the Agent's reply (BIT 2's own queuing
+//                            test, and "join calling join" forwarding).
+//   node join.mjs cert    -- completes BIT 2 once a signed certificate
+//                            comes back from whoever owns `join` (manually,
+//                            e.g. pasted after Cloudflare's CA issues it):
+//                            reads a PEM certificate from stdin, confirms
+//                            its public key matches TG_JR_SK's own already-
+//                            generated private key (proof this is really
+//                            the cert for *this* CSR, not a mismatched
+//                            paste), and stores it as cert.pem alongside
+//                            cert.key -- the same two files mtls.mjs's own
+//                            readCert() already expects, so this identity
+//                            is immediately usable for real mTLS with no
+//                            further wiring. Also saves TG_JR_SK itself
+//                            under ~/.config/.<network>/<pk>.sk (the same
+//                            convention every other stable identity --
+//                            Дід Alik, JA2, ...-- already uses), so this
+//                            Requester becomes a fully-fledged, find-pk.mjs-
+//                            resolvable-by-PK identity the moment its cert
+//                            lands, not just a disposable one-shot CSR.
+//                            <network> is whatever this CSR's own original
+//                            request carried (JOIN_NETWORK, below) -- read
+//                            back from a sidecar main() leaves next to the
+//                            CSR, since cert mode runs as its own separate,
+//                            later invocation with no other memory of it.
 
 import { execFile } from 'node:child_process' // {{{1
 import fs from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
@@ -53,6 +85,25 @@ import { job } from '../../../../daeh/lib/job.ts'
 import { buyGrant, payBack } from './gate.js'
 
 const execFileP = promisify(execFile)
+
+function readStdin () { // {{{1
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    process.stdin.on('data', chunk => chunks.push(chunk))
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+    process.stdin.on('error', reject)
+  });
+}
+
+//function certDirFor (pk) {{{1
+/** Where this identity's TLS keypair/CSR/cert live -- PK-keyed, same
+ * layout mtls.mjs's own CERT_BASE uses, so a cert stored here needs no
+ * further wiring to become usable. Shared by main() (CSR generation) and
+ * mainCert() (storing the signed cert later) so both land in the exact
+ * same directory for the same identity. */
+function certDirFor (pk) {
+  return process.env.JOIN_CERT_DIR ?? `${process.env.HOME}/.config/.cloudflare-job-fair/${pk}`;
+}
 
 //function makeOutbox () {{{1
 /** Same one-shot outbox as run.js's own -- see its comment. */
@@ -77,8 +128,8 @@ function makeOutbox () {
  * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`. */
 async function generateCsr (pk, cn, dir) {
   await fs.mkdir(dir, { recursive: true })
-  const keyPath = path.join(dir, 'certificate.key')
-  const csrPath = path.join(dir, 'certificate.csr')
+  const keyPath = path.join(dir, 'cert.key')
+  const csrPath = path.join(dir, 'cert.csr')
   await execFileP('openssl', [
     'req', '-new', '-newkey', 'rsa:2048', '-nodes',
     '-keyout', keyPath, '-out', csrPath,
@@ -172,9 +223,13 @@ async function main () { // {{{1
   const pk = Keypair.fromSecret(process.env.TG_JR_SK).publicKey()
 
   const cn = process.env.JOIN_CN ?? `join-${randomUUID().slice(0, 8)}`
-  const dir = process.env.JOIN_CERT_DIR ?? await fs.mkdtemp(path.join(os.tmpdir(), 'join-'))
+  const dir = certDirFor(pk)
   const { keyPath, csrPath, csr } = await generateCsr(pk, cn, dir)
-  console.log(`[join] generated CSR for ${pk} at ${csrPath} (private key: ${keyPath})`)
+  // Left for `cert` mode to read back later (see this file's own header) --
+  // that's a separate, later process invocation with no other way to learn
+  // which network this particular CSR's own request named.
+  await fs.writeFile(path.join(dir, 'network'), `${network}\n`)
+  console.log(`[join] generated CSR for ${pk} at ${csrPath}\n       (private key: ${keyPath})`)
 
   const reply = await requestJoin({
     issuerPk,
@@ -186,8 +241,60 @@ async function main () { // {{{1
   console.log('[join] Agent reply:', reply)
 }
 
+//async function mainCert () {{{1
+/** `node join.mjs cert` -- completes BIT 2 (see this file's own header):
+ * reads a signed PEM certificate from stdin and stores it as cert.pem
+ * next to this identity's already-generated cert.key, the same two files
+ * mtls.mjs's own readCert() expects -- no further wiring needed once this
+ * returns. Validates the cert's own public key matches the stored private
+ * key first (comparing RSA moduli) -- the one thing that actually proves
+ * this is the certificate *this* CSR asked for, not some other paste. */
+async function mainCert () {
+  if (!process.env.TG_JR_SK) throw new Error('TG_JR_SK must be set -- which identity is this certificate for?');
+  const pk = Keypair.fromSecret(process.env.TG_JR_SK).publicKey()
+  const dir = certDirFor(pk)
+  const keyPath = path.join(dir, 'cert.key')
+  const certPath = path.join(dir, 'cert.pem')
+
+  const cert = (await readStdin()).trim() + '\n'
+  if (!cert.includes('BEGIN CERTIFICATE')) throw new Error('no PEM certificate found on stdin');
+
+  const tmpDir = await fs.mkdtemp(path.join('/tmp', 'join-cert-'))
+  try {
+    const tmpCertPath = path.join(tmpDir, 'cert.pem')
+    await fs.writeFile(tmpCertPath, cert)
+    const [{ stdout: certModulus }, { stdout: keyModulus }] = await Promise.all([
+      execFileP('openssl', ['x509', '-noout', '-modulus', '-in', tmpCertPath]),
+      execFileP('openssl', ['rsa', '-noout', '-modulus', '-in', keyPath]),
+    ])
+    if (certModulus.trim() !== keyModulus.trim()) {
+      throw new Error(`certificate does not match the private key at ${keyPath} -- wrong paste?`);
+    }
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  }
+
+  await fs.writeFile(certPath, cert)
+  console.log(`[join] stored validated certificate for ${pk} at ${certPath}`)
+
+  // Promotes this Requester to a full, stable identity -- see this file's {{{2
+  // own header: not validated against anything (JOIN_NETWORK's own
+  // comment in main() applies here too), just read back verbatim from the
+  // sidecar main() left alongside the CSR. Falls back to 'testnet' if
+  // that sidecar is missing (a CSR generated before this existed).
+  const network = await fs.readFile(path.join(dir, 'network'), 'utf-8').then(s => s.trim()).catch(() => 'testnet')
+  const skDir = path.join(process.env.HOME, '.config', `.${network}`)
+  await fs.mkdir(skDir, { recursive: true })
+  const skPath = path.join(skDir, `${pk}.sk`)
+  await fs.writeFile(skPath, `${process.env.TG_JR_SK}\n`)
+  await fs.chmod(skPath, 0o600)
+  console.log(`[join] stored Stellar secret key for ${pk} (network: ${network}) at ${skPath}`)
+  // }}}2
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) { // {{{1
-  main().catch(e => {
+  const run = process.argv[2] === 'cert' ? mainCert() : main()
+  run.catch(e => {
     console.error('[join] FAILED', e)
     process.exitCode = 1
   })
