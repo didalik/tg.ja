@@ -54,7 +54,11 @@
 //                                queuing test, and "join calling join"
 //                                forwarding). Leaves a sidecar.json next to
 //                                the CSR (network + TG_JR_SK itself) for
-//                                the other mode to pick up later.
+//                                the other mode to pick up later -- that
+//                                mode deletes it once it's done with it
+//                                (see mainCert()'s own comment), so its
+//                                presence also doubles as "cert not
+//                                completed yet" for this identity.
 //   node join.mjs <name>  -- completes BIT 2 once a signed certificate
 //                                comes back from whoever owns `join`
 //                                (manually, e.g. pasted after Cloudflare's
@@ -333,6 +337,13 @@ async function mainCert (name) {
     await fs.writeFile(path.join(dir, 'extras.json'), JSON.stringify(extras) + '\n')
     console.log(`[join] stored extras.json for ${pk}:`, extras)
   } // }}}2
+
+  // sidecar.json has done its one job (carrying TG_JR_SK/network from
+  // main()'s own process to this one) and holds the raw secret key in
+  // plaintext -- no reason to leave it sitting in a cert directory a
+  // moment longer than it's needed, now that it's safely stored under
+  // ~/.config/.<network>/<pk>.sk above.
+  await fs.rm(path.join(dir, 'sidecar.json'), { force: true })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) { // {{{1
