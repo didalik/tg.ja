@@ -1,6 +1,9 @@
-// tg/sh/gate-p.mjs -- sh's gate mechanism, Requester (P) side: places a {{{1
-// matching buy for E's 'peer' job asset and resolves once it fills. Adapted
-// from tg/ja/public/jr/gate.js's buyGrant -- simplified, no PoD (see
+// tg/ja/public/jr/gate-p.mjs -- the Requester's half of sh's 'peer' gate {{{1
+// mechanism (tg/sh/gate.js is E's own half, still Agent-side infrastructure
+// -- only this half moved here, alongside request-peer.mjs, so both
+// survive tg/ja/public eventually becoming its own public repo -- ccddh.md):
+// places a matching buy for E's 'peer' job asset and resolves once it
+// fills. Adapted from ./gate.js's own buyGrant -- simplified, no PoD (see
 // tg/sh/gate.js's own header for why).
 //
 // Env:
@@ -13,7 +16,7 @@
 import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } // {{{1
 from '@stellar/stellar-sdk'
 import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
-from '../../daeh/lib/stellar.mjs'
+from '../../../../daeh/lib/stellar.mjs'
 
 function assetCode () { return process.env.SH_ASSET_CODE ?? 'TGA'; } // {{{1
 

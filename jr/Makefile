@@ -47,13 +47,13 @@ join-cert:
 
 .PHONY: peer # {{{1
 # BIT 3's Requester side (ccddh.md's "Approaching join Use Case BIT 3").
-# Belongs here, not under tg/sh, even though the mechanism it drives
-# (request-peer.mjs) lives there -- tg/ja/public is meant to eventually
-# become a public repo (CLAUDE.md's own description), so this is where a
-# real end user, with nothing but a BIT-2 cert, will run `make peer` to
-# become a `ja`-kind JA themselves; they'll never have tg/sh/Makefile
-# available to run it from (that's Дід Alik's own superset-kind
-# infrastructure, not something this repo plans to ship to them).
+# request-peer.mjs/gate-p.mjs live right here too now, not under tg/sh --
+# tg/ja/public is meant to eventually become a public repo (CLAUDE.md's
+# own description), so this is where a real end user, with nothing but a
+# BIT-2 cert, will run `make peer` to become a `ja`-kind JA themselves;
+# they'll never have tg/sh available to them at all (that's Дід Alik's
+# own superset-kind infrastructure -- gate.js, grant.sh, grant-root.sh,
+# setup-sshd.sh, stage/ -- none of which this repo plans to ship to them).
 #
 # Drives request-peer.mjs via its existing HTTP API (POST /request, poll
 # /status) instead of its pitch-page/browser flow -- same requestPeer()
@@ -82,7 +82,7 @@ peer:
 	P_PK=$$(node ../../../find-pk.mjs Tosh)
 	read SH_P_SK < "${TESTNET}/$$P_PK.sk"
 	export SH_P_SK
-	node ../../../sh/request-peer.mjs &
+	node request-peer.mjs &
 	SERVER_PID=$$!
 	trap 'kill $$SERVER_PID 2>/dev/null' EXIT
 	node -e '

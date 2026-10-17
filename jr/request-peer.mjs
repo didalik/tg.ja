@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 
-// tg/sh/request-peer.mjs -- P's local process: serves a local pitch page {{{1
-// for the phone's own browser, and on request, buys access to E's 'peer'
-// job, waits to be matched and granted a jailed SSH account, retrieves
-// tg/sh/stage/'s content out of it, confirms retrieval back to E, and
-// verifies the content locally. Kept separate from tg/sh/p.mjs (BIT 1-3's
+// tg/ja/public/jr/request-peer.mjs -- the Requester's local process for {{{1
+// BIT 3's 'peer' job: serves a local pitch page for the phone's own
+// browser, and on request, buys access to E's 'peer' job (tg/sh/gate.js,
+// still the Agent's own private infrastructure -- only the Requester side
+// moved here), waits to be matched and granted a jailed SSH account,
+// retrieves tg/sh/stage/'s content out of it, confirms retrieval back to
+// E, and verifies the content locally. Lives under tg/ja/public, not
+// tg/sh, because tg/ja/public is meant to eventually become a public
+// repo real end users run (ccddh.md), and they'll never have tg/sh
+// available to them -- same reasoning jr/Makefile's own `peer` target is
+// here rather than there. Kept separate from tg/sh/p.mjs (BIT 1-3's
 // SSH-port-forwarding peering experiment) -- a different mechanism
 // entirely, this one riding on the same daeh/lib/job.ts Stellar-gate +
 // WS-match machinery ja/jr/db already use.
@@ -30,7 +36,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import WebSocket from 'ws'
-import { job } from '../../daeh/lib/job.ts'
+import { job } from '../../../../daeh/lib/job.ts'
 import { buyGrant } from './gate-p.mjs'
 
 const execFileP = promisify(execFile)
