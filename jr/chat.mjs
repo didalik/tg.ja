@@ -129,7 +129,14 @@ async function main () { // {{{1
   rl.prompt()
   for await (const line of rl) {
     if (!line.trim()) { rl.prompt(); continue; }
-    outbox.push(line)
+    // +'\n': readline strips the trailing newline from every line it
+    // yields, but the Agent's own job (tg/sh/jobs/echo/Makefile, also
+    // readline-based now) needs one to recognize a complete line at all
+    // -- without it, this text just sits in its own input buffer forever,
+    // confirmed live (a session that matched fine, then hung on the very
+    // first reply). Never applies to the sentinel below -- job.ts's own
+    // check is an exact string match against 'context.job.stdin.end()'.
+    outbox.push(line + '\n')
     let reply
     try {
       reply = await nextMessage(gen)
