@@ -2,24 +2,27 @@
 
 // tg/ja/public/jr/chat.mjs -- interactive, multi-turn chat with an {{{1
 // echo-offering Agent whose own job answers from an LLM (Tosh's sh-kind
-// echo, ccddh.md's Ollama round) -- not a protocol change, just one
-// gate trade + WS match + relay per line typed, repeated in a loop. The
-// basic plumbing test (run.js) stays untouched and minimal on purpose --
-// this is a deliberately separate script, not a refactor of it, so a
-// real multi-turn chat doesn't creep into what run.js exists to prove.
+// echo, ccddh.md's Ollama round). The basic plumbing test (run.js) stays
+// untouched and minimal on purpose -- this is a deliberately separate
+// script, not a refactor of it.
 //
-// "Multi-turn" here means repeated one-shot requests, not a longer-lived
-// WS session -- echo's own relay phase still ends after exactly one
-// message each time (same indataEOD sentinel run.js already uses), so
-// each line typed really is its own fresh gate trade. The *identity*
-// doing the buying is set up once per chat session, though, not once
-// per line -- same TG_JR_SK the whole way through, so only the first
-// question pays for a fresh account/trustline; later ones just buy.
+// One gate trade for the *whole* chat session, not one per line: job.ts's
+// own relay phase already supports more than one message per Match (every
+// ws-message after the first still just gets written to the Agent's own
+// spawned job's stdin -- only the indataEOD sentinel ends it), so this
+// just keeps the same job() generator open and pushes each typed line
+// into a live outbox instead of opening a fresh gate-trade+match per
+// line (round 56's own first attempt -- it worked, but paying and
+// re-matching on every line doesn't feel like "a chat", and the Agent's
+// own job was also still answering each line from a blank slate, with no
+// memory of anything said earlier -- see tg/sh/jobs/echo/Makefile's own
+// header for that half of the fix). The sentinel is sent once, when you
+// quit (Ctrl-D), and payBack() happens once at the end -- pay once, chat
+// freely.
 //
 // Env: same as run.js (TG_ISSUER_PK, TG_WS_URL, TG_ASSET_CODE, TG_JR_SK,
 // TG_JR_NAME, TG_GRANT_TIMEOUT_MS, TG_MATCH_TIMEOUT_MS) -- registry
-// auto-discovery works the same way too, just resolved once at startup
-// instead of per message.
+// auto-discovery works the same way too.
 
 import readline from 'node:readline' // {{{1
 import WebSocket from 'ws'
@@ -29,59 +32,70 @@ import { job } from 'daeh'
 import { httpize } from 'daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
-//function makeOutbox (message) {{{1
-/** One-shot outbox carrying a single caller-supplied message, instead of
- * run.js's own hardcoded 'hello from jr' -- otherwise identical. */
-function makeOutbox (message) {
-  const queue = [message, 'context.job.stdin.end()']
+//function makeOutbox () {{{1
+/** Live, push-based outbox -- same shape join.mjs's own uses (push()
+ * resolves an already-waiting receive() immediately if there is one,
+ * otherwise queues), not run.js's own pre-queued one-shot version. Lets
+ * the chat loop below feed lines in as they're typed, one job() session
+ * at a time, rather than opening a fresh one per line. */
+function makeOutbox () {
+  const queue = []
+  let pending
   return {
-    push () {}, // never called from outside here -- nothing to push after construction
+    push (line) {
+      if (pending) { const resolve = pending; pending = undefined; resolve(line); }
+      else queue.push(line);
+    },
     receive () {
       if (queue.length > 0) return Promise.resolve(queue.shift());
-      return new Promise(() => {}); // drained -- nothing more to say, same as run.js's own
+      return new Promise(resolve => { pending = resolve });
     },
   };
 }
 
-//async function ask (actor, message) {{{1
-/** One full gate-trade + WS-match + relay round trip for a single
- * message -- the same sequence run.js's own main() does once, pulled
- * out so the chat loop below can repeat it per line typed. */
-async function ask (actor, message) {
-  const kp = Keypair.fromSecret(actor.sk)
-  const requesterKp = await buyGrant(line => console.error('[chat] gate:', line))
-  const outbox = makeOutbox(message)
-  const gen = job(actor, {
-    aud: 'echo', label: 'Echo', outbox,
-    matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
-  })
-  let reply, jobError
+//async function waitForType (gen, type) {{{1
+/** Drains gen until it yields an event of `type`, surfacing any 'error'
+ * event along the way by throwing it instead. Used once, right after
+ * matching, to let the Agent's own job actually spawn before the chat
+ * loop starts sending lines. */
+async function waitForType (gen, type) {
   let step = await gen.next()
   while (!step.done) {
     const event = step.value
-    if (event.type === 'message') reply = event.payload.sub
-    else if (event.type === 'error') jobError = event.error
+    if (event.type === type) return event;
+    if (event.type === 'error') throw event.error;
     step = await gen.next()
   }
-  if (jobError) throw jobError;
-  if (!reply) throw new Error('ask(): no reply received');
-  await payBack(requesterKp)
-  return reply;
+  throw new Error(`chat: connection closed before a '${type}' event`);
+}
+
+//async function nextMessage (gen) {{{1
+/** Drains gen until the next 'message' event (the Agent's own reply) --
+ * skipping over 'output' (just confirms what *we* sent) along the way.
+ * Returns null once the generator's done (the Agent closed the
+ * connection), instead of throwing, since that's an ordinary way for a
+ * chat to end, not a failure. */
+async function nextMessage (gen) {
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === 'message') return event.payload.sub;
+    if (event.type === 'error') throw event.error;
+    step = await gen.next()
+  }
+  return null;
 }
 
 async function main () { // {{{1
-  if (!process.env.TG_JR_SK) { // {{{2 set once for the whole session, same
-    // reasoning as join.mjs's own main() -- a stable identity across every
-    // ask() in this chat, not a fresh one per line.
+  if (!process.env.TG_JR_SK) {
     const [sk] = (await generate_keypair()).split(' ')
     process.env.TG_JR_SK = sk
-  } // }}}2
+  }
   const sk = process.env.TG_JR_SK
   const pk = Keypair.fromSecret(sk).publicKey()
   const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
 
-  if (!process.env.TG_ISSUER_PK) { // {{{2 same registry auto-discovery as
-    // run.js's own main(), just resolved once here instead of per message.
+  if (!process.env.TG_ISSUER_PK) {
     const registryUrl = `${httpize(wsUrl)}/registry`
     const res = await fetch(registryUrl)
     if (res.ok) {
@@ -93,24 +107,46 @@ async function main () { // {{{1
     } else {
       console.error(`[chat] registry: no entry (${registryUrl} -> ${res.status})`)
     }
-  } // }}}2
+  }
   if (!process.env.TG_ISSUER_PK) throw new Error('TG_ISSUER_PK not set, directly or via the registry -- nobody to chat with');
   process.env.TG_ASSET_CODE ??= 'ECHO'
 
   const actor = { app: 'jr', iss: { name: process.env.TG_JR_NAME ?? 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
 
-  console.error('[chat] each line is its own gate trade + request -- Ctrl-D to quit.')
+  console.error('[chat] buying access (one trade for the whole session)...')
+  const requesterKp = await buyGrant(line => console.error('[chat] gate:', line))
+  console.error('[chat] gate grant confirmed')
+
+  const outbox = makeOutbox()
+  const gen = job(actor, {
+    aud: 'echo', label: 'Echo', outbox,
+    matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
+  })
+  await waitForType(gen, 'matched')
+  console.error('[chat] matched -- type away, Ctrl-D to end the session.')
+
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr, prompt: '> ' })
   rl.prompt()
   for await (const line of rl) {
     if (!line.trim()) { rl.prompt(); continue; }
+    outbox.push(line)
+    let reply
     try {
-      console.log(await ask(actor, line))
+      reply = await nextMessage(gen)
     } catch (err) {
       console.error('[chat] error:', err.message ?? err)
+      break;
     }
+    if (reply === null) { console.error('[chat] connection closed'); break; }
+    console.log(reply)
     rl.prompt()
   }
+
+  outbox.push('context.job.stdin.end()')
+  let step = await gen.next()
+  while (!step.done) step = await gen.next(); // drain to the final close
+  await payBack(requesterKp)
+  console.error('[chat]', step.value.message)
 }
 
 main().catch(e => { // {{{1
