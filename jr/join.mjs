@@ -100,8 +100,8 @@ import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { Keypair } from '@stellar/stellar-sdk'
 import WebSocket from 'ws'
-import { generate_keypair } from '../../../../daeh/lib/sdk.js'
-import { job } from '../../../../daeh/lib/job.ts'
+import { generate_keypair } from 'daeh/sdk.js'
+import { job } from 'daeh'
 import { buyGrant, payBack } from './gate.js'
 
 const execFileP = promisify(execFile)

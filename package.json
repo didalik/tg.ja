@@ -1,0 +1,14 @@
+{
+  "author": "Дід Alik",
+  "name": "tg.ja",
+  "version": "0.0.1",
+  "description": "ja: the base Job Agent kind (echo, join) -- Stellar-DEX-gated access, plus the join Use Case's CSR/cert flow and Requester tooling.",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.2.0",
+    "buffer": "^6.0.3",
+    "daeh": "git+ssh://git@github.com/didalik/daeh.git",
+    "ws": "^8.21.0"
+  }
+}

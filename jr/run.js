@@ -6,14 +6,13 @@
 // toll-gate wiring (gate -> tg/ws match -> job relay) works
 // end to end against `daeh` directly, not the job itself.
 //
-// Imports daeh directly by relative path -- daeh isn't published yet, but
-// we're all in the same monorepo checkout right now, so there's no reason
-// to hand-copy it the way db/public/requestor's lib/ files still do. Once
-// daeh is npm-published, this becomes a one-line import-specifier change,
-// not a re-copy. (This does mean jr isn't independently cloneable the way
-// db/public/requestor is, for now -- a deliberate, temporary tradeoff:
-// proving daeh's interfaces via a real consumer is this round's actual
-// goal, not re-solving "standalone clone" for jr too.)
+// Imports daeh as a bare specifier, resolved via node_modules (ccddh.md's
+// "limited trust" round: daeh moved to its own repo, didalik/daeh,
+// installed as a git+ssh dependency -- a plain npm symlink from k2's own
+// root when run from inside this monorepo, same mechanism either way).
+// jr is independently cloneable now, the same as db/public/requestor --
+// this file's own imports no longer assume a fixed relative depth into a
+// surrounding checkout.
 //
 // Env:
 //   TG_WS_URL          -- optional, defaults to the qa deploy. Also used,
@@ -36,9 +35,9 @@
 //                         already gone through.
 
 import WebSocket from 'ws' // {{{1
-import { generate_keypair } from '../../../../daeh/lib/sdk.js'
-import { job } from '../../../../daeh/lib/job.ts'
-import { httpize } from '../../../../daeh/lib/util.mjs'
+import { generate_keypair } from 'daeh/sdk.js'
+import { job } from 'daeh'
+import { httpize } from 'daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
 //function makeOutbox () {{{1

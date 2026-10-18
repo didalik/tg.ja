@@ -1,9 +1,14 @@
 # tg/ja/public/jr/Makefile -- `make` (or `make jr`) here starts jr, the {{{1
-# Toll Gate's Job Requester. Not independently cloneable yet, unlike
-# db/public/requestor -- run.js/gate.js import daeh by relative path, since
-# daeh isn't published yet (see their own header comments) -- but needs no
-# `npm i` of its own either way: Node resolves ws/@stellar/stellar-sdk by
-# walking up to the k2 root's own node_modules.
+# Toll Gate's Job Requester. Independently cloneable now, same as
+# db/public/requestor -- run.js/gate.js/join.mjs/etc. all import daeh as a
+# bare specifier (ccddh.md's "limited trust" round: daeh moved to its own
+# repo, didalik/daeh), not by relative path. Needs no `npm i` of its own
+# when run from inside this monorepo checkout, the way it's mostly been
+# run so far -- Node resolves ws/@stellar/stellar-sdk/daeh by walking up
+# to the k2 root's own node_modules either way -- but a standalone clone
+# of tg/ja/public (ccddh.md's own eventual public-repo plan) will need
+# its own `npm i` once it has its own package.json, to pull daeh in via
+# its own git+ssh dependency instead.
 ####
 
 .ONESHELL:

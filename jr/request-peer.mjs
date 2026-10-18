@@ -36,7 +36,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import WebSocket from 'ws'
-import { job } from '../../../../daeh/lib/job.ts'
+import { job } from 'daeh'
 import { buyGrant } from './gate-p.mjs'
 
 const execFileP = promisify(execFile)
