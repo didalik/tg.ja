@@ -15,18 +15,19 @@
 // surrounding checkout.
 //
 // Env:
-//   TG_WS_URL          -- optional, defaults to the qa deploy. Also used,
-//                         httpized (see daeh/lib/util.mjs's httpize), to
-//                         derive the registry URL below -- a browser-based
-//                         jr (planned, not yet built) would do the exact
-//                         same derivation from whatever ws(s):// URL it
-//                         already has, no separate file/URL needed.
+//   TG_WS_URL          -- optional, defaults to the qa deploy. Its origin
+//                         (httpized -- see daeh/lib/util.mjs's httpize) is
+//                         used to reach the one shared job catalog below;
+//                         its own smName-shaped path is just the fallback
+//                         connect target if discovery finds nothing.
 //   TG_JR_NAME         -- optional, defaults to 'jr'
 //   TG_ISSUER_PK       -- the Agent's Stellar public key (see gate.js).
-//                         Optional -- if unset, fetched from the registry
-//                         instead. If *that's* also empty (nothing
-//                         registered), the gate trade is skipped entirely
-//                         (dev/test only).
+//                         Optional -- if unset, discovered from the
+//                         catalog instead (by TG_ASSET_CODE), which also
+//                         supplies which smName to actually connect to.
+//                         If *that's* also empty (nothing registered for
+//                         that asset code), the gate trade is skipped
+//                         entirely (dev/test only).
 //   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
 //                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
@@ -69,27 +70,41 @@ async function main () { // {{{1
   // registry's own entry.assetCode is what normally provides it instead.
   process.env.TG_ASSET_CODE ??= 'ECHO'
 
-  const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+  // The original, smName-bearing URL -- the fallback connect target if
+  // discovery below finds nothing (today's own "skip gating, still try
+  // the connection" behavior -- a bare origin with no smName segment
+  // would 500 the WS upgrade instead). Only ever overwritten on an actual
+  // catalog hit, never discarded outright.
+  let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+
+  if (!process.env.TG_ISSUER_PK) {
+    const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special"
+    // scheme, so .origin is meaningful -- scheme+host+port, path dropped.
+    const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
+    const res = await fetch(registryUrl)
+    if (res.ok) {
+      const entries = await res.json() // always an array now (possibly empty), never 404
+      if (entries.length > 0) {
+        const entry = entries[0] // server-sorted newest-registered first
+        process.env.TG_ISSUER_PK = entry.issuerPk
+        process.env.TG_ASSET_CODE = entry.assetCode
+        if (entry.price) process.env.TG_PRICE = entry.price
+        wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
+        console.log('[jr] registry: found', entry)
+      } else {
+        console.log(`[jr] registry: no entry (${registryUrl})`)
+      }
+    } else {
+      console.log(`[jr] registry: lookup failed (${registryUrl} -> ${res.status})`)
+    }
+  }
+
   const actor = {
     app: 'jr',
     iss: { name: process.env.TG_JR_NAME ?? 'jr', pk },
     sk,
     WebSocket,
     wsArgs: [wsUrl],
-  }
-
-  if (!process.env.TG_ISSUER_PK) {
-    const registryUrl = `${httpize(wsUrl)}/registry`
-    const res = await fetch(registryUrl)
-    if (res.ok) {
-      const entry = await res.json()
-      process.env.TG_ISSUER_PK = entry.issuerPk
-      if (entry.assetCode) process.env.TG_ASSET_CODE = entry.assetCode
-      if (entry.price) process.env.TG_PRICE = entry.price
-      console.log('[jr] registry: found', entry)
-    } else {
-      console.log(`[jr] registry: no entry (${registryUrl} -> ${res.status})`)
-    }
   }
 
   let requesterKp

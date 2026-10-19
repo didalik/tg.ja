@@ -93,23 +93,32 @@ async function main () { // {{{1
   }
   const sk = process.env.TG_JR_SK
   const pk = Keypair.fromSecret(sk).publicKey()
-  const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+  // Fallback connect target if discovery below finds nothing -- kept, not
+  // discarded, since catalog discovery only overwrites it on an actual hit.
+  let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+  process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
 
   if (!process.env.TG_ISSUER_PK) {
-    const registryUrl = `${httpize(wsUrl)}/registry`
+    const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
+    const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
     const res = await fetch(registryUrl)
     if (res.ok) {
-      const entry = await res.json()
-      process.env.TG_ISSUER_PK = entry.issuerPk
-      if (entry.assetCode) process.env.TG_ASSET_CODE = entry.assetCode
-      if (entry.price) process.env.TG_PRICE = entry.price
-      console.error('[chat] registry: found', entry)
+      const entries = await res.json() // always an array now (possibly empty), never 404
+      if (entries.length > 0) {
+        const entry = entries[0] // server-sorted newest-registered first
+        process.env.TG_ISSUER_PK = entry.issuerPk
+        process.env.TG_ASSET_CODE = entry.assetCode
+        if (entry.price) process.env.TG_PRICE = entry.price
+        wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
+        console.error('[chat] registry: found', entry)
+      } else {
+        console.error(`[chat] registry: no entry (${registryUrl})`)
+      }
     } else {
-      console.error(`[chat] registry: no entry (${registryUrl} -> ${res.status})`)
+      console.error(`[chat] registry: lookup failed (${registryUrl} -> ${res.status})`)
     }
   }
-  if (!process.env.TG_ISSUER_PK) throw new Error('TG_ISSUER_PK not set, directly or via the registry -- nobody to chat with');
-  process.env.TG_ASSET_CODE ??= 'ECHO'
+  if (!process.env.TG_ISSUER_PK) throw new Error('TG_ISSUER_PK not set, directly or via the catalog -- nobody to chat with');
 
   const actor = { app: 'jr', iss: { name: process.env.TG_JR_NAME ?? 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
 

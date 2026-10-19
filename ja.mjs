@@ -49,34 +49,48 @@ async function main () { // {{{1
   // through to tg/ws -- so connecting here reaches the real Durable
   // Object exactly the way Node jr's TG_WS_URL does, just same-origin
   // instead of direct.
-  const wsUrl = wsize(location.href)
+  // Fallback connect target if discovery below finds nothing -- kept, not
+  // discarded, since catalog discovery only overwrites it on an actual hit.
+  let wsUrl = wsize(location.href)
   //out(`wsUrl: ${wsUrl}`)
 
   const [sk, pk] = (await generate_keypair()).split(' ')
+  window.process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
+
+  // httpize(origin) + '/catalog/registry' reaches tg/ws's own one shared
+  // job catalog -- directly for Node jr (TG_WS_URL points straight at
+  // tg/ws), and here via tg/ja's own matching /catalog/registry proxy
+  // route (see ../src/index.js/util.mjs's registryHandler), since a plain
+  // fetch() (unlike a WebSocket) is subject to CORS, and this keeps every
+  // request this page makes on its own origin. Always fetched
+  // unconditionally (no TG_ISSUER_PK guard like Node jr has) -- there's
+  // no env-var override path in a browser, so this is the only way this
+  // page ever learns an issuer PK at all.
+  const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
+  const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${window.process.env.TG_ASSET_CODE}`
+  const res = await fetch(registryUrl)
+  if (res.ok) {
+    const entries = await res.json() // always an array now (possibly empty), never 404
+    if (entries.length > 0) {
+      const entry = entries[0] // server-sorted newest-registered first
+      window.process.env.TG_ISSUER_PK = entry.issuerPk
+      window.process.env.TG_ASSET_CODE = entry.assetCode
+      if (entry.price) window.process.env.TG_PRICE = entry.price
+      wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect
+      out(`registry: found ${JSON.stringify(entry)}`)
+    } else {
+      out(`registry: no entry (${registryUrl})`)
+    }
+  } else {
+    out(`registry: lookup failed (${registryUrl} -> ${res.status})`)
+  }
+
   const actor = {
     app: 'jr',
     iss: { name: 'jr', pk },
     sk,
     WebSocket,
     wsArgs: [wsUrl],
-  }
-
-  // httpize(wsUrl) + '/registry' reaches tg/ws's own /<smName>/registry --
-  // directly for Node jr (TG_WS_URL points straight at tg/ws), and here
-  // via tg/ja's own matching /<smName>/registry proxy route (see
-  // ../src/index.js/util.mjs's registryHandler), since a plain fetch()
-  // (unlike a WebSocket) is subject to CORS, and this keeps every request
-  // this page makes on its own origin.
-  const registryUrl = `${httpize(wsUrl)}/registry`
-  const res = await fetch(registryUrl)
-  if (res.ok) {
-    const entry = await res.json()
-    window.process.env.TG_ISSUER_PK = entry.issuerPk
-    if (entry.assetCode) window.process.env.TG_ASSET_CODE = entry.assetCode
-    if (entry.price) window.process.env.TG_PRICE = entry.price
-    out(`registry: found ${JSON.stringify(entry)}`)
-  } else {
-    out(`registry: no entry (${registryUrl} -&gt; ${res.status})`)
   }
 
   let requesterKp
