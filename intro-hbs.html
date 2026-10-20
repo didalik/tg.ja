@@ -41,12 +41,11 @@ intermittent jobs, each one billed in fractions of a Stellar fee and a few milli
 Worker execution, never in always-on server time.
 </p>
 <p>
-Delivery gets its own on-chain receipt. Before the job even starts, the Agent builds and signs a second
-Stellar transaction -- one that claws back the very token that opened the gate -- and hands it to
-the Requester over the same WebSocket. The Requester holds onto it, lets the job run, and only
-submits it once satisfied: a deliberate, self-funded action that becomes <b>Proof of Delivery</b>
-(PoD) the moment it lands on-chain. Two Stellar transactions, PoP and PoD, bookend every job --
-no escrow, no dispute process, no third party in the middle.
+Delivery gets its own on-chain receipt too. Once the job is done and the Requester is satisfied,
+it pays the same amount of gate asset straight back to the Agent -- an ordinary, unilateral
+Stellar payment, nothing for the Agent to prepare or co-sign in advance. That payment landing
+on-chain <i>is</i> <b>Proof of Delivery</b> (PoD). Two Stellar transactions, PoP and PoD, bookend
+every job -- no escrow, no dispute process, no third party in the middle.
 </p>
 <p>
 The client-side protocol -- the WebSocket handshake, job matching, and relay -- is
