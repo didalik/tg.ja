@@ -10,12 +10,19 @@
 <div id='div1'>
     <h3>Toll-Gated Job session</h3>
 <p>
-This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places a
-Stellar trade for the Job you picked, gets matched with that Agent over WebSocket, runs the job,
-and submits the Proof of Delivery once it's done. Came here directly, not from the
+This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
+Stellar trade for the whole session, gets matched with the Agent you picked over WebSocket, then
+lets you chat with it -- as many messages as you like, all on that one trade -- and submits the
+Proof of Delivery once you end the session. Came here directly, not from the
 <a href='/'>intro page</a>'s own catalog? It falls back to discovering whatever's registered
 under <code>ECHO</code> on its own.
 </p><hr/>
+<form id='chatForm'>
+  <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />
+  <button type='submit' id='sendBtn' disabled>Send</button>
+  <button type='button' id='endBtn' disabled>End Session</button>
+</form>
+<hr/>
 <p id='content1'>
 </p>
 </div>

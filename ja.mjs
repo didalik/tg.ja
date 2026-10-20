@@ -23,10 +23,15 @@ const out = m => {
 reset({ content: document.getElementById('content1') }) // {{{1
 
 //function makeOutbox () {{{1
-/** A one-shot outbox: queue up the lines to send ahead of time, pumpOutbox
- * (inside daeh's job()) pulls them one at a time once matched. Blocks
- * forever once the queue is drained -- fine here, there's nothing more to
- * say after the sentinel. Same as tg/ja/public/jr/run.js's own. */
+/** Live, push-based outbox -- same shape jr/chat.mjs's own uses (push()
+ * resolves an already-waiting receive() immediately if there is one,
+ * otherwise queues), not a pre-queued one-shot version. Lets the chat
+ * loop below feed lines in as they're typed, one job() session at a
+ * time, instead of sending a single hardcoded line and ending
+ * immediately (ccddh.md's "both cards run plain ECHO" round -- the
+ * connection target was always right, but a one-shot "hello from jr"
+ * never gave Tosh's own LLM-backed echo a real conversation to show
+ * any difference in). */
 function makeOutbox () {
   const queue = []
   let pending
@@ -40,6 +45,39 @@ function makeOutbox () {
       return new Promise(resolve => { pending = resolve });
     },
   };
+}
+
+//async function waitForType (gen, type) {{{1
+/** Drains gen until it yields an event of `type`, surfacing any 'error'
+ * event along the way by throwing it instead. Used once, right after
+ * matching, to let the Agent's own job actually spawn before the chat
+ * form starts accepting input. Same as jr/chat.mjs's own. */
+async function waitForType (gen, type) {
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === type) return event;
+    if (event.type === 'error') throw event.error;
+    step = await gen.next()
+  }
+  throw new Error(`ja: connection closed before a '${type}' event`);
+}
+
+//async function nextMessage (gen) {{{1
+/** Drains gen until the next 'message' event (the Agent's own reply) --
+ * skipping over 'output' (just confirms what *we* sent) along the way.
+ * Returns null once the generator's done (the Agent closed the
+ * connection), instead of throwing, since that's an ordinary way for a
+ * chat to end, not a failure. Same as jr/chat.mjs's own. */
+async function nextMessage (gen) {
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === 'message') return event.payload.sub;
+    if (event.type === 'error') throw event.error;
+    step = await gen.next()
+  }
+  return null;
 }
 
 async function main () { // {{{1
@@ -115,38 +153,65 @@ async function main () { // {{{1
   }
 
   const outbox = makeOutbox()
-  outbox.push('hello from jr')
-  outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
-
   const gen = job(actor, {
     aud: 'echo', label: 'Echo', outbox,
     matchTimeoutMs: 30_000,
   })
-  let step = await gen.next()
-  while (!step.done) {
-    const event = step.value
-    if (event.type === 'open') {
-      out('Connected, waiting to be matched with an Agent...')
-    } else if (event.type === 'matched') {
-      out('Matched -- sending the echo request...')
-    } else if (event.type === 'output') {
-      out(`sent: ${event.line}`)
-    } else if (event.type === 'message') {
-      out(`echo reply: ${event.payload.sub}`)
-    } else if (event.type === 'error') {
-      out(`job error: ${event.error}`)
-    }
-    step = await gen.next()
-  }
-  out(step.value.message)
+  await waitForType(gen, 'matched')
+  out('Matched -- type a message below and hit Send. One gate trade pays for the whole session.')
 
-  // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to
-  // the Agent now that the Job is done, unilaterally -- no XDR from the
-  // Agent needed any more, same as Node jr's own run.js.
-  if (requesterKp) {
-    const txId = await payBack(requesterKp)
-    out(`PoD-TXID: ${txId}`) // bare, meant to be parsed later
+  // Disabled by default in the markup (nothing to type into until
+  // matched) -- enable now that there's actually a session to chat in.
+  document.getElementById('chatInput').disabled = false
+  document.getElementById('sendBtn').disabled = false
+  document.getElementById('endBtn').disabled = false
+
+  // Interactive, multi-turn chat -- form submit replaces the old single
+  // hardcoded outbox.push('hello from jr'), the "End Session" button
+  // replaces Node chat.mjs's own Ctrl-D. Both the Agent's own job (if
+  // it's Tosh's) and the relay already support more than one message
+  // per Match (daeh/lib/job.ts's own indataEOD handling) -- this page
+  // just never drove it that way before. {{{1
+  const form = document.getElementById('chatForm')
+  const input = document.getElementById('chatInput')
+  const sendBtn = document.getElementById('sendBtn')
+  const endBtn = document.getElementById('endBtn')
+  let ended = false
+
+  async function endSession () {
+    if (ended) return;
+    ended = true
+    input.disabled = true; sendBtn.disabled = true; endBtn.disabled = true
+    outbox.push('context.job.stdin.end()')
+    let step = await gen.next()
+    while (!step.done) step = await gen.next(); // drain to the final close
+    if (requesterKp) {
+      const txId = await payBack(requesterKp)
+      out(`PoD-TXID: ${txId}`) // bare, meant to be parsed later
+    }
+    if (step.value) out(step.value.message)
   }
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault()
+    if (ended) return;
+    const line = input.value.trim()
+    if (!line) return;
+    input.value = ''
+    input.disabled = true; sendBtn.disabled = true
+    out(`&gt; ${line}`)
+    outbox.push(line + '\n') // +'\n': the Agent's own job (readline-based) needs one to see a complete line -- see jr/chat.mjs's own note on this
+    try {
+      const reply = await nextMessage(gen)
+      if (reply === null) { out('connection closed'); ended = true; return; }
+      out(reply)
+    } catch (err) {
+      out(`error: ${err.message ?? err}`)
+    }
+    if (!ended) { input.disabled = false; sendBtn.disabled = false; input.focus() }
+  })
+
+  endBtn.addEventListener('click', () => endSession().catch(e => out(`FAILED to end session: ${e.message}`)))
 }
 
 main().catch(e => { // {{{1
