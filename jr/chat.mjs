@@ -132,9 +132,54 @@ async function main () { // {{{1
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
   })
   await waitForType(gen, 'matched')
-  console.error('[chat] matched -- type away, Ctrl-D to end the session.')
+  console.error('[chat] matched -- type away, Ctrl-D (or Ctrl-C) to end the session.')
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr, prompt: '> ' })
+
+  // Without this, Ctrl-C mid-conversation just kills the process outright
+  // -- the WS connection becomes an abrupt TCP drop instead of a clean
+  // close, and the Agent's own spawned job is left waiting on stdin until
+  // Cloudflare's own edge eventually notices the dead socket, which is
+  // NOT reliable: confirmed live, sometimes within seconds, sometimes
+  // needing a manual kill on the Agent's own box.
+  //
+  // Deliberately does NOT wait for gen to fully drain (done:true) the way
+  // the normal post-loop cleanup below does: that drain only completes
+  // once the server echoes back the Agent's own ws-close, which can't
+  // happen until the Agent's spawned job notices the sentinel -- and
+  // that's agent.py's own `for line in sys.stdin` loop, which only checks
+  // for EOF *between* lines, so it can't react until whatever reply it's
+  // currently generating finishes (confirmed live: as long as that
+  // reply's own latency, tens of seconds or more -- not something a
+  // Ctrl-C should make the user sit through). Pushing the sentinel here
+  // is enough on its own: it's picked up fast by the already-running
+  // nextMessage(gen) loop (queued ahead of the still-pending reply, which
+  // the Agent is still computing), and once it's on the wire, cleanup on
+  // the Agent's own side proceeds independently of whether this process
+  // is even still running to see it finish -- run.js on mba is a
+  // long-lived, always-on process (launchd), not something this session
+  // owns the lifecycle of.
+  let interrupted = false
+  process.on('SIGINT', async () => {
+    if (interrupted) { console.error('\n[chat] forcing exit...'); process.exit(1); }
+    interrupted = true
+    console.error('\n[chat] interrupted -- ending session (Ctrl-C again to skip payback and exit now)...')
+    outbox.push('context.job.stdin.end()')
+    rl.close()
+    const forceExit = setTimeout(() => {
+      console.error('[chat] payBack timed out, exiting without it')
+      process.exit(1)
+    }, 8000)
+    try {
+      await payBack(requesterKp)
+      console.error('[chat] paid back')
+    } catch (err) {
+      console.error('[chat] payBack failed:', err.message ?? err)
+    }
+    clearTimeout(forceExit)
+    process.exit(0)
+  })
+
   rl.prompt()
   for await (const line of rl) {
     if (!line.trim()) { rl.prompt(); continue; }
@@ -158,11 +203,26 @@ async function main () { // {{{1
     rl.prompt()
   }
 
-  outbox.push('context.job.stdin.end()')
-  let step = await gen.next()
-  while (!step.done) step = await gen.next(); // drain to the final close
-  await payBack(requesterKp)
-  console.error('[chat]', step.value.message)
+  // Skip this whole block if SIGINT already fired: that handler owns its
+  // own sentinel-push/payBack/exit sequence (not draining gen fully --
+  // see its own comment), and rl.close() inside it is exactly what ended
+  // the loop above when the loop was idle at the prompt. Running this
+  // too would double-push the sentinel and double-call payBack() in a
+  // race against the handler's own in-flight one.
+  if (!interrupted) {
+    outbox.push('context.job.stdin.end()')
+    let step = await gen.next()
+    while (!step.done) step = await gen.next(); // drain to the final close
+    await payBack(requesterKp)
+    // step.value can be undefined here: the loop above may have already
+    // driven gen all the way to its own 'ws-close' return (reply === null
+    // broke the loop after nextMessage() already consumed that final
+    // {done: true} step itself) -- the drain loop's own first gen.next()
+    // call in that case just re-confirms done:true with no further value,
+    // standard once-exhausted generator semantics, not a bug to work
+    // around beyond not crashing on it.
+    if (step.value) console.error('[chat]', step.value.message)
+  }
 }
 
 main().catch(e => { // {{{1
