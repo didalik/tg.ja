@@ -3,64 +3,79 @@
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta charset="UTF-8">
-    <title>Kloud Of Trust</title>
+    <title>Toll-Gated Jobs</title>
     <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
 <hr/>
-<div style="text-align:center">
-There's a <a href='https://claude1.didalik.workers.dev/' target='_blank'>fancier version</a>
-of this page, done by Claude.
-</div>
-<hr/>
+<div id='div1'>
     <p>Dear Reader,</p>
     <p>
-Welcome to the Kloud Of Trust - the cloud-native, role-based organization of coders
-and testers. At present, it is my hobby project with three more projects in it:
-<ul>
-  <li><a href='https://stellar.org/' target='_blank'>Stellar</a> TESTNET Monitor (<b>TM</b>),</li>
-  <li><a href='https://www.cloudflare.com/' target='_blank'>Cloudflare</a> Job Fair (<b>jF</b>), and</li>
-  <li>Stellar Help Exchange (<b>hX</b>).</li>
-</ul>
-    </p><p>
-The <b>TM</b> is a 
-<a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a>-based semaphore
-to gate and queue <b>jF</b> Job Requests. When a Job Request is granted,
-<b>TM</b> starts the corresponding Job Agent. This serverless solution enables
-a 24/7 listener behind my ISP. See
-<a href='https://github.com/didalik/k2.hx' target='_blank'>k2.hx</a> GitHub repo for details.
-    </p><p>
-The <b>jF</b> matches Job Agents (digital content producers) with Job Users
-(digital content consumers) for a given Job and facilitates the data flow between them. I employ
-<a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets' target='_blank'>Hibernation WebSocket API</a>
-to implement a Match → Relay handshake that pairs up two sockets (a Job Offer from the
-Job Agent and a Job Request from the Job User) and then relays messages between the paired.
-The SDK is
-<a href='https://github.com/didalik/k2.jf/blob/main/lib/sdk.js' target='_blank'>on GitHub</a>.
-    </p><p>
-The <b>hX</b> provides an equitable marketplace, where job users pay job agents
-for jobs done - or get full refund otherwise. My
-<a href='https://github.com/didalik/k2.hx' target='_blank'>k2.hx</a> GitHub repo has more
-details - sequence diagrams, API and SDK. There is also a small
-<a href='https://qa.hx.kloudoftrust.org/tm' target='_blank'>demo</a> based on
-<a href='https://www.youtube.com/watch?v=y4TELgx28D4' target='_blank'>this YouTube video</a>.
-Combined, it is a <b>TM</b>/<b>jF</b>/<b>hX</b> integration test.
-I believe these are small but necessary steps to make the Internet a better place
-for you and me. So, if you are a coder, consider joining me on GitHub. As a tester,
-<a href='https://github.com/didalik/k2.hx/blob/main/README.md#how-to-get-paid-for-runnung-the-demo' target='_blank'>get paid</a> for running my demo!
-    </p><p>
-Summing up, the <b>TM</b>/<b>jF</b>/<b>hX</b> solution gives developers like me real 
-collaboration power and, for example, scales well into
-<a href='https://github.com/amissine/Awesome-AIAgent-Protocol' target='_blank'>the realms of Agentic AI</a>. Join me, won't you?
+Welcome to the Toll Gate -- a small, working piece of an idea we're building toward: an economy
+of autonomous agents that pay each other for real work, with no platform in the middle taking a
+cut or holding the keys. What you see running below isn't a mockup -- it's two genuinely
+independent machines, in different places, each selling access to a Job over the Stellar network,
+settling every trade on-chain, and never needing to see each other directly to do business.
+    </p>
+    <h3>Toll-Gated Jobs: Available via Cloudflare, Settled on Stellar</h3>
+<p>
+No API keys, no accounts, no subscriptions. A Job Agent issues its own small asset on the Stellar
+network and sells one unit of it at a fixed price, the way a toll booth sells passage. Any Job
+Requester who buys it has paid the toll; the Stellar trade that does the buying <i>is</i> the
+receipt, a public, timestamped <b>Proof of Purchase</b> (PoP) that costs nothing extra to produce,
+because the network already produces it as a side effect of the trade itself.
+This <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a>-based semaphore
+also takes care of gating/queueing multiple Requesters one at a time -- even without a public IP
+of its own (a laptop behind a home router -- or even an Android phone with <a href='https://termux.dev/en/' target='_blank'>Termux</a> -- is enough),
+the Agent stays reachable 24/7, because it
+only ever makes outbound connections, to Stellar and to Cloudflare -- nothing needs to connect
+into it.
+</p>
+<p>
+Paying the toll gets you matched with the Agent over a WebSocket, relayed through a single
+Cloudflare Durable Object using the <a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets' target='_blank'>Hibernation API</a> --
+the connection can sit open through an entire job without the Agent paying for idle compute
+between messages. That's what makes a toll gate like this work at small scale: many short,
+intermittent jobs, each one billed in fractions of a Stellar fee and a few milliseconds of
+Worker execution, never in always-on server time.
+</p>
+<p>
+Delivery gets its own on-chain receipt. Before the job even starts, the Agent builds and signs a second
+Stellar transaction -- one that claws back the very token that opened the gate -- and hands it to
+the Requester over the same WebSocket. The Requester holds onto it, lets the job run, and only
+submits it once satisfied: a deliberate, self-funded action that becomes <b>Proof of Delivery</b>
+(PoD) the moment it lands on-chain. Two Stellar transactions, PoP and PoD, bookend every job --
+no escrow, no dispute process, no third party in the middle.
+</p>
+<p>
+The client-side protocol -- the WebSocket handshake, job matching, and relay -- is
+<a href='https://www.npmjs.com/package/daeh' target='_blank'>daeh</a>, on its way to becoming a
+standalone npm package.
+</p>
+<hr/>
+<h3>Available Jobs right now</h3>
+<p>
+Both of the Jobs below genuinely answer "echo" -- but they're not the same thing, and you should
+know which one you're picking before you pay the toll. Pick one below to go try it, right in your
+browser.
+</p>
+<p id='content1'>
+</p>
+<hr/>
+    <p>
+Combined, this is a demo meant to scale into
+<a href='https://github.com/amissine/Awesome-AIAgent-Protocol' target='_blank'>the realms of Agentic AI</a> --
+not just a chatbot answering questions, but an agent that pays another agent, in real crypto,
+for help it can't give itself. If that's interesting to you, as a coder or a tester, I'd love to
+have you join us.
     </p><p>
 Cheers,
     </p><p>
-Дід Alik, aka Alec Missine<br/>
+Дід Alik, aka Alec Missine, with Claude<br/>
 didalik.aim@gmail.com
 <hr/>
     </p>
-<p id='content1'>
-</p>
+</div>
   </body>
   <script type="text/javascript">
