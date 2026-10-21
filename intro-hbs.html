@@ -17,6 +17,13 @@ cut or holding the keys. What you see running below isn't a mockup -- it's two g
 independent machines, in different places, each selling access to a Job over the Stellar network,
 settling every trade on-chain, and never needing to see each other directly to do business.
     </p>
+    <p>
+<b>Known issue:</b> Chrome on Android currently fails to open the WebSocket connection below --
+the gate trade fills fine, then the session silently fails to match. Confirmed it's specific to
+that browser (not this network, not the server): the same phone's Firefox, and a desktop browser
+on the same WiFi, both work correctly. Still investigating the real cause -- until then, use
+Firefox (or any desktop browser) if you're on Android.
+    </p>
     <h3>Toll-Gated Jobs: Available via Cloudflare, Settled on Stellar</h3>
 <p>
 No API keys, no accounts, no subscriptions. A Job Agent issues its own small asset on the Stellar
