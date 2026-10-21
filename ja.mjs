@@ -218,10 +218,17 @@ async function main () { // {{{1
     if (!ended) { input.disabled = false; sendBtn.disabled = false; input.focus() }
   })
 
-  endBtn.addEventListener('click', () => endSession().catch(e => out(`FAILED to end session: ${e.message}`)))
+  endBtn.addEventListener('click', () => endSession().catch(e => out(`FAILED to end session: ${e?.message ?? String(e)}`)))
 }
 
 main().catch(e => { // {{{1
   console.error('FAILED', e)
-  out(`FAILED: ${e.message}`)
+  // e?.message ?? String(e): defense in depth, not the real fix -- daeh's
+  // own job() used to throw a bare browser Event (no .message at all) for
+  // a WebSocket error, producing exactly "FAILED: undefined" with zero
+  // diagnostic value (confirmed live, mobile Safari). The real fix is in
+  // daeh/lib/job.ts's bridgeWs; this just keeps any future non-Error
+  // throw, from here or elsewhere, from ever regressing to "undefined"
+  // again.
+  out(`FAILED: ${e?.message ?? String(e)}`)
 })
