@@ -30,7 +30,7 @@ async function renderCatalog () {
     put(`<div class='job-card'>
       <b>${entry.assetCode ?? '(no asset code)'}</b> -- ${entry.description ?? '(no description given)'}
       <br/>price: ${entry.price ?? '?'} -- <a href='${href}'>Try this one</a>
-    </div><hr/>`)
+    </div>`)
   }
 }
 
