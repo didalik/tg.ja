@@ -5,13 +5,18 @@ reset({ content: document.getElementById('content1'), })
 //async function renderCatalog () {{{1
 /** Fetches the one shared job catalog (unfiltered -- every assetCode,
  * not just 'ECHO') and renders each entry as a pick-one card, linking to
- * /ja?issuerPk=...&assetCode=...&smName=... rather than connecting from
- * here directly. ja.mjs picks those query params up and uses them
- * as-is, skipping its own catalog discovery entirely (ccddh.md's
- * discovery-ambiguity round) -- this page is where a human browses and
- * chooses; /ja is where the chosen session actually runs. location.origin
- * is already http(s) -- no httpize() needed, unlike ja.mjs's own
- * derivation from a ws(s): URL. */
+ * /ja?issuerPk=...&assetCode=...&smName=...&aud=...&description=...
+ * rather than connecting from here directly. ja.mjs picks those query
+ * params up and uses them as-is, skipping its own catalog discovery
+ * entirely (ccddh.md's discovery-ambiguity round) -- this page is where
+ * a human browses and chooses; /ja is where the chosen session actually
+ * runs. `aud` matters, not just cosmetic: calc's own entry advertises
+ * aud: 'calc' (see tg/local/bin/toll_gate_calc's own TG_AUD), and
+ * without passing it through, ja.mjs would request the 'echo' every
+ * other entry defaults to and never match. `description` is passed
+ * through too so ja.mjs can show it again without a second fetch.
+ * location.origin is already http(s) -- no httpize() needed, unlike
+ * ja.mjs's own derivation from a ws(s): URL. */
 async function renderCatalog () {
   const registryUrl = `${location.origin}/catalog/registry`
   const res = await fetch(registryUrl)
@@ -25,7 +30,10 @@ async function renderCatalog () {
     return;
   }
   for (const entry of entries) {
-    const params = new URLSearchParams({ issuerPk: entry.issuerPk, assetCode: entry.assetCode ?? '', smName: entry.smName })
+    const params = new URLSearchParams({
+      issuerPk: entry.issuerPk, assetCode: entry.assetCode ?? '', smName: entry.smName,
+      aud: entry.aud ?? '', description: entry.description ?? '',
+    })
     const href = `/ja?${params.toString()}`
     put(`<div class='job-card'>
       <b>${entry.assetCode ?? '(no asset code)'}</b> -- ${entry.description ?? '(no description given)'}

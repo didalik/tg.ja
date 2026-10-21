@@ -16,6 +16,17 @@ lets you chat with it -- as many messages as you like, all on that one trade -- 
 Proof of Delivery once you end the session. Came here directly, not from the
 <a href='/'>intro page</a>'s own catalog? It falls back to discovering whatever's registered
 under <code>ECHO</code> on its own.
+</p>
+<p>
+This is also where the <a href='/'>intro page</a>'s own pitch becomes something you can actually
+poke at: if you picked Tosh's LLM-backed echo, try asking it something needing exact arithmetic --
+e.g. "what's 17 times 23?" -- instead of a plain fact. Watch for a reply like "The result of the
+calculation is 391": that's not the LLM doing the math, it's the LLM recognizing it shouldn't
+trust itself with the math, and paying a separate Job (<code>calc</code>, over this same Toll Gate,
+in real crypto) for the exact answer instead. If you picked <code>calc</code> directly instead, it
+has no LLM at all -- just type an expression (<code>+</code>, <code>-</code>, <code>*</code>,
+<code>/</code>, parens) and it answers exactly, every time, the same Job Tosh's own echo is paying
+under the hood.
 </p><hr/>
 <form id='chatForm'>
   <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />

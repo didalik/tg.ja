@@ -105,11 +105,15 @@ async function main () { // {{{1
   // to today's own auto-discovery below only when those params are
   // missing -- a direct, bookmarked /ja link still works unchanged.
   const picked = new URLSearchParams(location.search)
+  let aud = 'echo' // {{{2 overwritten below on a hit either way -- 'echo' is only the
+  // fallback for entries that never set TG_AUD (every echo one so far).
   if (picked.get('issuerPk') && picked.get('smName')) {
     window.process.env.TG_ISSUER_PK = picked.get('issuerPk')
     if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
+    if (picked.get('aud')) aud = picked.get('aud')
     wsUrl = `${origin}/${picked.get('smName')}`
     out(`picked: ${picked.get('assetCode') ?? window.process.env.TG_ASSET_CODE} from ${picked.get('issuerPk')}`)
+    if (picked.get('description')) out(picked.get('description'))
   } else {
     // httpize(origin) + '/catalog/registry' reaches tg/ws's own one shared
     // job catalog -- directly for Node jr (TG_WS_URL points straight at
@@ -126,6 +130,7 @@ async function main () { // {{{1
         window.process.env.TG_ISSUER_PK = entry.issuerPk
         window.process.env.TG_ASSET_CODE = entry.assetCode
         if (entry.price) window.process.env.TG_PRICE = entry.price
+        if (entry.aud) aud = entry.aud
         wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect
         out(`registry: found ${JSON.stringify(entry)}`)
       } else {
@@ -154,11 +159,13 @@ async function main () { // {{{1
 
   const outbox = makeOutbox()
   const gen = job(actor, {
-    aud: 'echo', label: 'Echo', outbox,
+    aud, label: aud === 'calc' ? 'Calc' : 'Echo', outbox,
     matchTimeoutMs: 30_000,
   })
   await waitForType(gen, 'matched')
-  out('Matched -- type a message below and hit Send. One gate trade pays for the whole session.')
+  out(aud === 'calc'
+    ? "Matched -- type an arithmetic expression below and hit Send, e.g. '2 + 3 * 4'. One gate trade pays for the whole session."
+    : 'Matched -- type a message below and hit Send. One gate trade pays for the whole session.')
 
   // Disabled by default in the markup (nothing to type into until
   // matched) -- enable now that there's actually a session to chat in.
