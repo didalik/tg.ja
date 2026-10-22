@@ -1,38 +1,36 @@
 #!/usr/bin/env node
 
-// tg/ja/public/jr/join.mjs -- the join Use Case's Requester side (see {{{1
-// ccddh.md's "The join Use Case and its BITs" and round 34's CSR fix):
+// tg/ja/public/jr/join.mjs -- the join Use Case's Requester side {{{1
+// (ccddh.md's "The join Use Case and its BITs", round 34's CSR fix, and
+// the later RTOJ-redesign round that replaced the gate entirely):
 // generates the Requester's own Stellar keypair and TLS CSR locally (the
-// private key never leaves this process), buys access to a JA's 'join'
-// gate -- 'join' is just another aud under the same toll-gate mechanism
-// 'echo' already uses, so this reuses gate.js's buyGrant() directly
-// rather than a separate module -- then sends {kind, csr, network, email}
-// and prints the Agent's reply.
+// private key never leaves this process), then -- instead of buying a
+// separate 'JOIN' asset with XLM -- does an RTOJ trade (rtoj.mjs's own
+// buyRtoj()) against the real asset of whichever Job it actually wants
+// to be allowed to offer (TG_ASSET_CODE, e.g. ECHO). That trade is the
+// only PoP this flow gets; once it fills, this applicant (and only this
+// applicant, until it's used) can Match under aud: 'join' at all (see
+// join-agent.mjs's own allowlist check) and send
+// {kind, csr, network, email}.
 //
-// Exports requestJoin() so tg/ja/join-agent.mjs can reuse the exact same
-// flow to forward a non-root JA's incoming request on to Дід Alik's own
-// 'join' gate ("join calling join", round 34), rather than duplicating
-// it. requestJoin() never generates a CSR itself -- that's this file's
-// own main() only -- so the forwarding path can pass the Requester's
-// original CSR through unchanged.
+// No more requestJoin()-by-a-forwarder ("join calling join", round 34) --
+// only the real Job Owner's own join-server.mjs ever offers aud: 'join'
+// now, so this is only ever called by the actual applicant.
 //
 // Env (direct CLI use):
-//   TG_ISSUER_PK   -- required for the default (CSR-request) mode: the
-//                     target JA's own Stellar public key
-//   TG_ASSET_CODE  -- optional, defaults to 'JOIN' (this Job's own fixed
-//                     selector -- see requestJoin()'s own comment)
-//   TG_PRICE, TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js.
-//                     Setting TG_JR_SK up front (rather than letting
-//                     buyGrant() generate one) is what makes this script's
-//                     own CSR/OU and the gate-trade identity the same
-//                     stable keypair (round 20's MRT design, same as sh's
-//                     E/P/F) instead of jr's own 'echo' BIT's two separate,
-//                     disposable ones. Only needed for the default mode --
-//                     `cert` mode (below) needs nothing from the
-//                     environment at all, since it reads TG_JR_SK back from
-//                     its own sidecar instead (that's a separate, later
-//                     process invocation; requiring this to still be
-//                     exported by then was never realistic).
+//   TG_ISSUER_PK   -- required: the real Job Owner's own Stellar public key
+//   TG_ASSET_CODE  -- required: which Job's real asset to RTOJ against
+//                     (e.g. ECHO) -- no default any more, since 'JOIN'
+//                     doesn't exist as its own asset to fall back to.
+//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see rtoj.mjs. Setting TG_JR_SK up
+//                     front (rather than letting buyRtoj() generate one)
+//                     is what makes this script's own CSR/OU and the
+//                     RTOJ-trade identity the same stable keypair (round
+//                     20's MRT design, same as sh's E/P/F). Only needed
+//                     for the default mode -- `cert` mode (below) needs
+//                     nothing from the environment at all, since it reads
+//                     TG_JR_SK back from its own sidecar instead (a
+//                     separate, later process invocation).
 //   TG_WS_URL      -- optional, defaults to the qa deploy
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000
 //   JOIN_NETWORK   -- optional, defaults to 'testnet' -- Дід Alik's own
@@ -49,10 +47,10 @@
 //                     the signed certificate comes back.
 //
 // Usage:
-//   node join.mjs         -- default mode: generate a CSR, request `join`,
-//                                print the Agent's reply (BIT 2's own
-//                                queuing test, and "join calling join"
-//                                forwarding). Leaves a sidecar.json next to
+//   node join.mjs         -- default mode: generate a CSR, RTOJ against
+//                                the target Job's real asset, request
+//                                `join` once that trade fills, print the
+//                                Agent's reply. Leaves a sidecar.json next to
 //                                the CSR (network + TG_JR_SK itself) for
 //                                the other mode to pick up later -- that
 //                                mode deletes it once it's done with it
@@ -102,7 +100,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import WebSocket from 'ws'
 import { generate_keypair } from 'daeh/sdk.js'
 import { job } from 'daeh'
-import { buyGrant, payBack } from './gate.js'
+import { buyRtoj } from '../../rtoj.mjs'
 
 const execFileP = promisify(execFile)
 
@@ -158,89 +156,62 @@ async function generateCsr (pk, cn, dir) {
   return { keyPath, csrPath, csr: await fs.readFile(csrPath, 'utf-8') };
 }
 
-function restoreEnv (prev) { // {{{1
-  for (const [k, v] of Object.entries(prev)) {
-    if (v === undefined) delete process.env[k]; else process.env[k] = v;
-  }
-}
-
 //export async function requestJoin (...) {{{1
-/** The join Use Case's Requester-side flow: buys access to `issuerPk`'s
- * 'join' gate (temporarily pointing gate.js's own env vars at it, then
- * restoring them -- not safe to call concurrently with itself or with
- * another buyGrant() user in the same process, fine for this script's
- * one-request-at-a-time use), then sends {kind, csr, network, email} and
- * returns the Agent's parsed JSON reply. */
+/** The join Use Case's Requester-side flow, redesigned (ccddh.md's
+ * RTOJ-redesign round): does an RTOJ trade (buyRtoj(), rtoj.mjs) against
+ * ownerPk's real `assetCode` asset -- the only PoP this flow gets -- then
+ * Matches under aud: 'join' (only this applicant, now that its trade
+ * just filled, can) and sends {kind, csr, network, email}, returning the
+ * Agent's parsed JSON reply. Deliberately no payBack() call here: there's
+ * no PoD unless the Requester pays back voluntarily (ccddh.md) -- nothing
+ * was necessarily delivered if the Owner rejects in the Relay phase, so
+ * this doesn't assume delivery happened the way echo's own BIT can. */
 export async function requestJoin ({
-  // One asset per Job (ccddh.md): 'JOIN' is this Job's own fixed selector,
-  // unlike the issuer PK (which legitimately varies per JA), so it
-  // defaults here rather than falling through to gate.js's generic 'TGA'.
-  // This also closes round 35's "accepted sharp edge" -- forwarding no
-  // longer needs JOIN_ROOT_ASSET_CODE set at all to get this right.
-  issuerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja', assetCode = 'JOIN', price,
+  kp, ownerPk, assetCode, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
   kind = 'cert', csr, network, email, matchTimeoutMs, onLog = () => {},
 }) {
-  const prev = {
-    TG_ISSUER_PK: process.env.TG_ISSUER_PK,
-    TG_ASSET_CODE: process.env.TG_ASSET_CODE,
-    TG_PRICE: process.env.TG_PRICE,
+  await buyRtoj({ kp, ownerPk, assetCode, onLog })
+  onLog(`RTOJ trade filled on ${assetCode} -- allowlisted for aud:'join'`)
+
+  const actor = {
+    app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
   }
-  process.env.TG_ISSUER_PK = issuerPk
-  process.env.TG_ASSET_CODE = assetCode
-  if (price) process.env.TG_PRICE = price
-  // One try/finally around the whole flow, not just buyGrant() -- payBack()
-  // below reads these same env vars, and needs them still set when it runs,
-  // not restored to whatever they were before this call.
-  try {
-    const kp = await buyGrant(onLog)
-    onLog('gate grant confirmed')
+  const outbox = makeOutbox()
+  outbox.push(JSON.stringify({ kind, csr, network, email }))
+  outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
-    const actor = {
-      app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
-    }
-    const outbox = makeOutbox()
-    outbox.push(JSON.stringify({ kind, csr, network, email }))
-    outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
-
-    const gen = job(actor, { aud: 'join', label: 'Join', outbox, matchTimeoutMs })
-    let reply, jobError
-    let step = await gen.next()
-    while (!step.done) {
-      const event = step.value
-      if (event.type === 'message') reply = JSON.parse(event.payload.sub)
-      else if (event.type === 'error') jobError = event.error
-      step = await gen.next()
-    }
-    if (jobError) throw jobError;
-    if (!reply) throw new Error('requestJoin(): no reply received');
-
-    // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to
-    // whoever we bought it from, now that the Job is done -- same
-    // unilateral payment jr's own echo BIT uses, works the same way
-    // whether issuerPk is the real Owner or a reseller.
-    const txId = await payBack(kp)
-    onLog(`PoD-TXID: ${txId}`)
-    return reply;
-  } finally {
-    restoreEnv(prev)
+  const gen = job(actor, { aud: 'join', label: 'Join', outbox, matchTimeoutMs })
+  let reply, jobError
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === 'message') reply = JSON.parse(event.payload.sub)
+    else if (event.type === 'error') jobError = event.error
+    step = await gen.next()
   }
+  if (jobError) throw jobError;
+  if (!reply) throw new Error('requestJoin(): no reply received');
+  return reply;
 }
 
 async function main () { // {{{1
-  const issuerPk = process.env.TG_ISSUER_PK
-  if (!issuerPk) throw new Error('TG_ISSUER_PK must be set (the target JAs own Stellar public key)');
+  const ownerPk = process.env.TG_ISSUER_PK
+  if (!ownerPk) throw new Error('TG_ISSUER_PK must be set (the real Job Owners own Stellar public key)');
+  const assetCode = process.env.TG_ASSET_CODE
+  if (!assetCode) throw new Error('TG_ASSET_CODE must be set (which Job asset to RTOJ against, e.g. ECHO)');
   const email = process.env.JOIN_EMAIL
   if (!email) throw new Error('JOIN_EMAIL must be set (where the issued cert should be sent)');
   const network = process.env.JOIN_NETWORK ?? 'testnet'
 
   if (!process.env.TG_JR_SK) { // {{{2 see this file's own header: setting
-    // this *before* buyGrant() runs is what unifies the CSR/OU identity
-    // with the gate-trade identity, the same stable-keypair pattern sh's
+    // this *before* buyRtoj() runs is what unifies the CSR/OU identity
+    // with the RTOJ-trade identity, the same stable-keypair pattern sh's
     // E/P/F already use.
     const [sk] = (await generate_keypair()).split(' ')
     process.env.TG_JR_SK = sk
   } // }}}2
-  const pk = Keypair.fromSecret(process.env.TG_JR_SK).publicKey()
+  const kp = Keypair.fromSecret(process.env.TG_JR_SK)
+  const pk = kp.publicKey()
 
   const cn = process.env.JOIN_CN ?? `join-${randomUUID().slice(0, 8)}`
   const dir = certDirFor(pk)
@@ -252,7 +223,7 @@ async function main () { // {{{1
   console.log(`[join] generated CSR for ${pk} at ${csrPath}\n       (private key: ${keyPath})`)
 
   const reply = await requestJoin({
-    issuerPk,
+    kp, ownerPk, assetCode,
     wsUrl: process.env.TG_WS_URL,
     csr, network, email,
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
