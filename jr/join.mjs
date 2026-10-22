@@ -5,8 +5,11 @@
 // the later RTOJ-redesign round that replaced the gate entirely):
 // generates the Requester's own Stellar keypair and TLS CSR locally (the
 // private key never leaves this process), then -- instead of buying a
-// separate 'JOIN' asset with XLM -- does an RTOJ trade (rtoj.mjs's own
-// buyRtoj()) against the real asset of whichever Job it actually wants
+// separate 'JOIN' asset with XLM -- does an RTOJ trade (daeh/rtoj.mjs's
+// own buyRtoj() -- promoted there from a k2-parent-repo-only tg/ja/rtoj.mjs,
+// since this submodule needs to resolve it standing alone, same reason
+// stellar.mjs was promoted into daeh, round 6) against the real asset of
+// whichever Job it actually wants
 // to be allowed to offer (TG_ASSET_CODE, e.g. ECHO). That trade is the
 // only PoP this flow gets; once it fills, this applicant (and only this
 // applicant, until it's used) can Match under aud: 'join' at all (see
@@ -22,7 +25,7 @@
 //   TG_ASSET_CODE  -- required: which Job's real asset to RTOJ against
 //                     (e.g. ECHO) -- no default any more, since 'JOIN'
 //                     doesn't exist as its own asset to fall back to.
-//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see rtoj.mjs. Setting TG_JR_SK up
+//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see daeh/rtoj.mjs. Setting TG_JR_SK up
 //                     front (rather than letting buyRtoj() generate one)
 //                     is what makes this script's own CSR/OU and the
 //                     RTOJ-trade identity the same stable keypair (round
@@ -100,7 +103,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import WebSocket from 'ws'
 import { generate_keypair } from 'daeh/sdk.js'
 import { job } from 'daeh'
-import { buyRtoj } from '../../rtoj.mjs'
+import { buyRtoj } from 'daeh/rtoj.mjs'
 
 const execFileP = promisify(execFile)
 
@@ -158,7 +161,7 @@ async function generateCsr (pk, cn, dir) {
 
 //export async function requestJoin (...) {{{1
 /** The join Use Case's Requester-side flow, redesigned (ccddh.md's
- * RTOJ-redesign round): does an RTOJ trade (buyRtoj(), rtoj.mjs) against
+ * RTOJ-redesign round): does an RTOJ trade (buyRtoj(), daeh/rtoj.mjs) against
  * ownerPk's real `assetCode` asset -- the only PoP this flow gets -- then
  * Matches under aud: 'join' (only this applicant, now that its trade
  * just filled, can) and sends {kind, csr, network, email}, returning the
