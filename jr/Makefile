@@ -68,23 +68,32 @@ join-cert:
 # own header; round 48 proved the relay itself works) when the Requester
 # is the phone, in this round's own topology.
 #
-# Resolves its own Requester identity by name ("Tosh") rather than
-# letting gate-p.mjs mint a fresh throwaway keypair every run -- once
-# this Requester becomes a real JA (BIT 4), it should already have a
-# stable identity behind it, same reasoning Дід Alik/JA2's own stable
-# keys have.
+# Resolves its own Requester identity by name (WHOAMI, default "Tosh"
+# for backward compatibility with existing scripts) rather than letting
+# gate-p.mjs mint a fresh throwaway keypair every run -- once this
+# Requester becomes a real JA (BIT 4), it should already have a stable
+# identity behind it, same reasoning Дід Alik/JA2's own stable keys
+# have. Previously hardcoded to "Tosh" -- a leftover from this BIT's own
+# first proof, not an intentional restriction; any real end user running
+# this needs their own name to resolve here instead.
 #
-# Env: SH_ISSUER_PK (required -- E's own Stellar public key, see
-# request-peer.mjs's own header) passed straight through from whoever
-# invokes this; nothing resolved locally here for it, unlike SH_P_SK
-# below -- a real end user has no access to Дід Alik's own
-# ~/.config/.cloudflare-job-fair/ name->PK mapping, but Tosh's own
-# identity does live wherever this actually runs.
+# find-pk.mjs now lives at this repo's own root (one level up from here),
+# not three levels up in the k2 parent repo -- a standalone clone of this
+# repo alone never had that path at all (caught running BIT 3 for a real
+# applicant, JA3, cloned standalone rather than from a full k2 checkout).
+#
+# Env: SH_ISSUER_PK (required -- the real Owner's own Stellar public key,
+# see request-peer.mjs's own header) passed straight through from
+# whoever invokes this; nothing resolved locally here for it, unlike
+# SH_P_SK below -- a real end user has no access to Дід Alik's own
+# ~/.config/.cloudflare-job-fair/ name->PK mapping, but this Requester's
+# own identity does live wherever this actually runs.
 SH_LOCAL_PORT ?= 8098
+WHOAMI ?= Tosh
 peer:
-	@echo $@ started on $$(date)
+	@echo $@ started on $$(date) WHOAMI=${WHOAMI}
 	set -e
-	P_PK=$$(node ../../../find-pk.mjs Tosh)
+	P_PK=$$(node ../find-pk.mjs '${WHOAMI}')
 	read SH_P_SK < "${TESTNET}/$$P_PK.sk"
 	export SH_P_SK
 	node request-peer.mjs &
