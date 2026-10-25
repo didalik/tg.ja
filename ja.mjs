@@ -126,7 +126,7 @@ async function main () { // {{{1
     if (res.ok) {
       const entries = await res.json() // always an array now (possibly empty), never 404
       if (entries.length > 0) {
-        const entry = entries[0] // server-sorted newest-registered first -- see the intro page's own picker for choosing deliberately instead
+        const entry = entries[0] // server-sorted cheapest-priced first -- see the intro page's own picker for choosing deliberately instead
         window.process.env.TG_ISSUER_PK = entry.issuerPk
         window.process.env.TG_ASSET_CODE = entry.assetCode
         if (entry.price) window.process.env.TG_PRICE = entry.price
