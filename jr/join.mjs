@@ -96,6 +96,7 @@
 
 import { execFile } from 'node:child_process' // {{{1
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
@@ -265,7 +266,7 @@ async function mainCert (name) {
   const cert = (await readStdin()).trim() + '\n'
   if (!cert.includes('BEGIN CERTIFICATE')) throw new Error('no PEM certificate found on stdin');
 
-  const tmpDir = await fs.mkdtemp(path.join('/tmp', 'join-cert-'))
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'join-cert-'))
   let pk
   try {
     const tmpCertPath = path.join(tmpDir, 'cert.pem')
