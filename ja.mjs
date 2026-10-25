@@ -96,14 +96,20 @@ async function main () { // {{{1
   window.process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
   const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
 
-  // A visitor who picked a specific entry on the intro page's own catalog
-  // list arrives here with ?issuerPk=...&smName=...&assetCode=... already
-  // in the URL -- use it directly, no discovery needed (ccddh.md's
-  // discovery-ambiguity round: picking was already done, by a human,
-  // looking at real descriptions, not re-decided here by taking
-  // whichever entry happened to register most recently). Falls through
-  // to today's own auto-discovery below only when those params are
-  // missing -- a direct, bookmarked /ja link still works unchanged.
+  // A visitor who picked a *specific seller* on the intro page's own
+  // catalog list arrives here with ?issuerPk=...&smName=... already in
+  // the URL -- a real, deliberate pin, used directly, no discovery at
+  // all (ccddh.md's discovery-ambiguity round). A visitor who picked a
+  // *Job* instead (ccddh.md's reselling round -- intro.mjs's own
+  // renderCatalog groups genuinely-fungible resale entries into one
+  // card) arrives with ?realIssuerPk=...&assetCode=... instead, no
+  // issuerPk -- resolved below to whichever group member is actually
+  // cheapest right now, same DEX-driven pick blind auto-discovery
+  // already uses, just scoped to real substitutes for what was shown
+  // rather than the whole assetCode (which could cross into a different
+  // experience entirely, e.g. Tosh's own LLM-backed chat). Falls through
+  // to blind, whole-assetCode auto-discovery only when *neither* is set
+  // -- a direct, bookmarked /ja link still works unchanged.
   const picked = new URLSearchParams(location.search)
   let aud = 'echo' // {{{2 overwritten below on a hit either way -- 'echo' is only the
   // fallback for entries that never set TG_AUD (every echo one so far).
@@ -115,6 +121,7 @@ async function main () { // {{{1
     out(`picked: ${picked.get('assetCode') ?? window.process.env.TG_ASSET_CODE} from ${picked.get('issuerPk')}`)
     if (picked.get('description')) out(picked.get('description'))
   } else {
+    if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
     // httpize(origin) + '/catalog/registry' reaches tg/ws's own one shared
     // job catalog -- directly for Node jr (TG_WS_URL points straight at
     // tg/ws), and here via tg/ja's own matching /catalog/registry proxy
@@ -124,9 +131,11 @@ async function main () { // {{{1
     const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${window.process.env.TG_ASSET_CODE}`
     const res = await fetch(registryUrl)
     if (res.ok) {
-      const entries = await res.json() // always an array now (possibly empty), never 404
+      let entries = await res.json() // always an array now (possibly empty), never 404
+      const realIssuerPk = picked.get('realIssuerPk')
+      if (realIssuerPk) entries = entries.filter(e => (e.realIssuerPk ?? e.issuerPk) === realIssuerPk);
       if (entries.length > 0) {
-        const entry = entries[0] // server-sorted cheapest-priced first -- see the intro page's own picker for choosing deliberately instead
+        const entry = entries[0] // server-sorted cheapest-priced first, scoped above if realIssuerPk was given
         window.process.env.TG_ISSUER_PK = entry.issuerPk
         window.process.env.TG_ASSET_CODE = entry.assetCode
         if (entry.price) window.process.env.TG_PRICE = entry.price
@@ -134,7 +143,7 @@ async function main () { // {{{1
         wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect
         out(`registry: found ${JSON.stringify(entry)}`)
       } else {
-        out(`registry: no entry (${registryUrl})`)
+        out(`registry: no entry (${registryUrl}${realIssuerPk ? ` filtered to realIssuerPk=${realIssuerPk}` : ''})`)
       }
     } else {
       out(`registry: lookup failed (${registryUrl} -> ${res.status})`)
