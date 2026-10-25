@@ -117,3 +117,30 @@ peer:
 	  })();
 	'
 	echo $@ DONE;echo
+
+.PHONY: compete # {{{1
+# Self-service entry point for becoming a competing Agent (ccddh.md's
+# "publish daeh, promote the Agent-offering flow" round) -- the whole
+# point of promoting run.js/gate.js/register.js into this repo in the
+# first place. Thin wrapper; the actual logic lives in compete.mjs (RTOJ
+# a real unit from OWNER_PK, register, start selling) -- see its own
+# header for the full story and env var list. No cert/CSR needed.
+#
+# Deliberately doesn't give WHOAMI its own `?=` default here -- Make
+# variables are file-global, not per-target, so that would never win
+# against peer's own earlier `WHOAMI ?= Tosh` anyway: `?=` assignments run
+# unconditionally at parse time regardless of which target gets invoked,
+# so by the time this recipe runs, WHOAMI is *already* "Tosh" even if
+# nobody asked for it (confirmed live via `make -n`: this target silently
+# exported WHOAMI=Tosh with no override at all). $(origin WHOAMI) is
+# 'command line' or 'environment' only for a real, deliberate override --
+# 'file' means it's just peer's own stale default talking, so compete.mjs
+# own `process.env.WHOAMI ?? 'me'` is left to be the actual fallback a
+# real visitor sees.
+ASSET_CODE ?= ECHO
+PRICE ?= 0.5
+compete:
+	@echo $@ started on $$(date) ASSET_CODE=${ASSET_CODE} PRICE=${PRICE}
+	if [ -z '${OWNER_PK}' ]; then echo 'OWNER_PK must be set (the real Owner you are reselling)'; exit 1; fi
+	case '$(origin WHOAMI)' in 'command line'|environment) export WHOAMI='${WHOAMI}';; esac
+	OWNER_PK='${OWNER_PK}' ASSET_CODE='${ASSET_CODE}' PRICE='${PRICE}' node compete.mjs
