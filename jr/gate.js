@@ -7,12 +7,20 @@
 // Agent's sell isn't live yet.
 //
 // Env:
-//   TG_ISSUER_PK       -- required: the Agent's own Stellar public key. This
-//                        is published/known ahead of time, the same way any
-//                        service's payment address would be -- it can't be
-//                        discovered via the WS handshake, since the Agent
-//                        doesn't even connect to tg/ws until after its own
-//                        gate opens.
+//   TG_ISSUER_PK       -- required: the Agent's own Stellar public key --
+//                        whoever runs the gate + Job and gets paid back
+//                        (see payBack). This is published/known ahead of
+//                        time, the same way any service's payment address
+//                        would be -- it can't be discovered via the WS
+//                        handshake, since the Agent doesn't even connect
+//                        to tg/ws until after its own gate opens.
+//   TG_ASSET_ISSUER_PK -- optional, defaults to TG_ISSUER_PK (today's only
+//                        real case, same account issues and sells). A
+//                        reseller (ccddh.md's RTOJ) sells real inventory
+//                        of someone *else's* asset, so the asset to
+//                        actually trust/buy has a different issuer than
+//                        TG_ISSUER_PK itself -- see tg/ja/gate.js's own
+//                        mirror-image env var.
 //   TG_ASSET_CODE      -- optional, defaults to 'TGA' -- must match the Agent's
 //   TG_PRICE           -- optional, defaults to '1' -- must match the Agent's
 //   TG_JR_SK    -- optional: reuse a specific Stellar identity instead
@@ -28,6 +36,8 @@ import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server
 from 'daeh/stellar.mjs'
 
 function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; } // {{{1
+
+function assetIssuerPk () { return process.env.TG_ASSET_ISSUER_PK ?? process.env.TG_ISSUER_PK; } // {{{1
 
 function price () { return process.env.TG_PRICE ?? '1'; } // {{{1
 
@@ -91,7 +101,7 @@ async function cancelBuyOffer (kp, asset) {
  * purpose. Returns the submitted transaction's hash. */
 export async function payBack (kp) {
   const issuerPk = process.env.TG_ISSUER_PK
-  const asset = new Asset(assetCode(), issuerPk)
+  const asset = new Asset(assetCode(), assetIssuerPk())
   const account = await server.loadAccount(kp.publicKey())
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.payment({ destination: issuerPk, asset, amount: '1' }))
@@ -118,10 +128,10 @@ export async function buyGrant (
   const issuerPk = process.env.TG_ISSUER_PK // {{{2
   if (!issuerPk) throw new Error('TG_ISSUER_PK must be set (the Agents own Stellar public key)');
   const kp = process.env.TG_JR_SK ? Keypair.fromSecret(process.env.TG_JR_SK) : Keypair.random()
-  const asset = new Asset(assetCode(), issuerPk)
+  const asset = new Asset(assetCode(), assetIssuerPk())
 
   await ensureFunded(kp)
-  onLog(`trusting ${assetCode()}:${issuerPk}`)
+  onLog(`trusting ${assetCode()}:${asset.issuer}`)
   await trust(kp, asset)
 
   // Both the stream and the poll fallback below start from this same point
