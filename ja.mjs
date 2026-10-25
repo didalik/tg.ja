@@ -116,6 +116,13 @@ async function main () { // {{{1
   if (picked.get('issuerPk') && picked.get('smName')) {
     window.process.env.TG_ISSUER_PK = picked.get('issuerPk')
     if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
+    // A direct pin to a reseller's own entry still needs gate.js to know
+    // the *real* asset to trust/buy is someone else's, not this seller's
+    // own look-alike -- same gap as the discovery branch below, fixed
+    // the same way (caught live: JA3's own real resale, found correctly
+    // via realIssuerPk-scoped discovery, still bought the wrong,
+    // JA3-self-issued "ECHO" because nothing ever set this).
+    if (picked.get('realIssuerPk')) window.process.env.TG_ASSET_ISSUER_PK = picked.get('realIssuerPk')
     if (picked.get('aud')) aud = picked.get('aud')
     wsUrl = `${origin}/${picked.get('smName')}`
     out(`picked: ${picked.get('assetCode') ?? window.process.env.TG_ASSET_CODE} from ${picked.get('issuerPk')}`)
@@ -138,6 +145,13 @@ async function main () { // {{{1
         const entry = entries[0] // server-sorted cheapest-priced first, scoped above if realIssuerPk was given
         window.process.env.TG_ISSUER_PK = entry.issuerPk
         window.process.env.TG_ASSET_CODE = entry.assetCode
+        // The real asset to trust/buy, when this entry is a reseller's
+        // own (gate.js's own mirror-image env var) -- without this,
+        // gate.js falls back to trusting/buying entry.issuerPk's own
+        // self-issued look-alike instead of the real thing it actually
+        // sells (caught live: JA3's own real resale, found correctly via
+        // discovery, still never filled -- wrong asset entirely).
+        if (entry.realIssuerPk) window.process.env.TG_ASSET_ISSUER_PK = entry.realIssuerPk
         if (entry.price) window.process.env.TG_PRICE = entry.price
         if (entry.aud) aud = entry.aud
         wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect

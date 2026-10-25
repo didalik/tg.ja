@@ -88,6 +88,13 @@ async function main () { // {{{1
         const entry = entries[0] // server-sorted cheapest-priced first
         process.env.TG_ISSUER_PK = entry.issuerPk
         process.env.TG_ASSET_CODE = entry.assetCode
+        // The real asset to trust/buy, when this entry is a reseller's
+        // own (gate.js's own mirror-image env var) -- without this,
+        // gate.js falls back to trusting/buying entry.issuerPk's own
+        // self-issued look-alike instead of the real thing it actually
+        // sells (caught live, ja.mjs: discovery found a reseller's real
+        // entry correctly, but the trade never filled -- wrong asset).
+        if (entry.realIssuerPk) process.env.TG_ASSET_ISSUER_PK = entry.realIssuerPk
         if (entry.price) process.env.TG_PRICE = entry.price
         wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
         console.log('[jr] registry: found', entry)
