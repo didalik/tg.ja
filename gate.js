@@ -9,7 +9,7 @@
 // into daeh): a standalone clone of this repo alone never had this file at
 // all, so there was no way to actually *become* a competing Agent, only to
 // *request* a Job (jr/) -- only daeh's own import below needed to change
-// (bare specifier, resolved via node_modules once daeh is npm-published),
+// (bare specifier, resolved via node_modules now that daeh is npm-published),
 // nothing else. tg/ja/gate.js stays behind unchanged, still what Дід
 // Alik's/JA2's own toll_gate_reset/toll_gate_calc services run.
 //
