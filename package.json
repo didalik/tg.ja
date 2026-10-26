@@ -6,9 +6,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@amissine/daeh": "^0.0.1",
     "@stellar/stellar-sdk": "^16.2.0",
     "buffer": "^6.0.3",
-    "daeh": "git+ssh://git@github.com/didalik/daeh.git",
     "ws": "^8.21.0"
   }
 }

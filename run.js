@@ -56,10 +56,10 @@
 import { Keypair } from '@stellar/stellar-sdk' // {{{1
 import { spawn } from 'node:child_process'
 import WebSocket from 'ws'
-import { runJob } from 'daeh'
+import { runJob } from '@amissine/daeh'
 import { grant as gateGrant } from './gate.js'
 import { mtlsOptions } from './mtls.mjs'
-import { buyRtoj } from 'daeh/rtoj.mjs'
+import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 
 const sk = process.env.TG_AGENT_SK // to sign/verify Match/Relay data {{{1
 const pk = process.env.TG_AGENT_PK

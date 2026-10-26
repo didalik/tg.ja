@@ -13,7 +13,7 @@
 // stdout otherwise -- callers (Makefiles) just see empty output + a
 // nonzero status, same as any other lookup miss.
 
-import { findPk } from 'daeh/find-pk.mjs' // {{{1
+import { findPk } from '@amissine/daeh/find-pk.mjs' // {{{1
 
 const [name] = process.argv.slice(2)
 if (!name) throw new Error('usage: node find-pk.mjs <name>');

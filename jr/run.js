@@ -36,9 +36,9 @@
 //                         already gone through.
 
 import WebSocket from 'ws' // {{{1
-import { generate_keypair } from 'daeh/sdk.js'
-import { job } from 'daeh'
-import { httpize } from 'daeh/util.mjs'
+import { generate_keypair } from '@amissine/daeh/sdk.js'
+import { job } from '@amissine/daeh'
+import { httpize } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
 //function makeOutbox () {{{1

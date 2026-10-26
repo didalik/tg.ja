@@ -1,7 +1,7 @@
 import { put, reset, } from './lib/util.mjs' // {{{1
-import { generate_keypair, } from 'daeh/sdk.js'
-import { job, } from 'daeh'
-import { httpize, wsize, } from 'daeh/util.mjs'
+import { generate_keypair, } from '@amissine/daeh/sdk.js'
+import { job, } from '@amissine/daeh'
+import { httpize, wsize, } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack, } from './jr/gate.js'
 
 // gate.js/stellar.mjs read process.env.* (TG_ISSUER_PK, TG_ASSET_CODE, {{{1

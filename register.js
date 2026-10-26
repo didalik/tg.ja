@@ -50,7 +50,7 @@
 
 import https from 'node:https'
 import { mtlsAgent } from './mtls.mjs'
-import { httpize } from 'daeh/util.mjs'
+import { httpize } from '@amissine/daeh/util.mjs'
 
 const smName = process.argv[2]
 if (!smName) throw new Error('usage: node register.js <smName>');

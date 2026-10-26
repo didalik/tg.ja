@@ -41,9 +41,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Keypair } from '@stellar/stellar-sdk'
-import { findPk } from 'daeh/find-pk.mjs'
-import { generate_keypair } from 'daeh/sdk.js'
-import { buyRtoj } from 'daeh/rtoj.mjs'
+import { findPk } from '@amissine/daeh/find-pk.mjs'
+import { generate_keypair } from '@amissine/daeh/sdk.js'
+import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
