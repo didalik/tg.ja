@@ -6,7 +6,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@amissine/daeh": "^0.0.1",
+    "@amissine/daeh": "^0.0.2",
     "@stellar/stellar-sdk": "^16.2.0",
     "buffer": "^6.0.3",
     "ws": "^8.21.0"

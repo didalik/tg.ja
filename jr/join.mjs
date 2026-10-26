@@ -48,51 +48,53 @@
 //                     generated keypair/CSR are written, and where `cert`
 //                     mode (below) later looks for that same keypair once
 //                     the signed certificate comes back.
+//   JOIN_NAME      -- optional: naming this identity once its cert lands
+//                     (see storeCert()'s own header) -- replaces the old
+//                     `node join.mjs <name>` positional arg for this,
+//                     now that a single `node join.mjs` invocation does
+//                     the whole thing (see Usage below); that positional
+//                     form still exists, but only to select mainCert()
+//                     over main() entirely, so it can no longer also
+//                     carry a name for main()'s own use.
+//   JOIN_POLL_TIMEOUT_MS -- optional: give up waiting for a human to act
+//                     on the queued request after this many ms (unset,
+//                     the default, waits forever -- there's no fixed SLA
+//                     on a human looking at something, same reasoning
+//                     TG_GRANT_TIMEOUT_MS's own default has).
 //
 // Usage:
-//   node join.mjs         -- default mode: generate a CSR, RTOJ against
-//                                the target Job's real asset, request
-//                                `join` once that trade fills, print the
-//                                Agent's reply. Leaves a sidecar.json next to
-//                                the CSR (network + TG_JR_SK itself) for
-//                                the other mode to pick up later -- that
-//                                mode deletes it once it's done with it
-//                                (see mainCert()'s own comment), so its
-//                                presence also doubles as "cert not
-//                                completed yet" for this identity.
-//   node join.mjs <name>  -- completes BIT 2 once a signed certificate
-//                                comes back from whoever owns `join`
-//                                (manually, e.g. pasted after Cloudflare's
-//                                CA issues it): reads a PEM certificate
-//                                from stdin, recovers which identity it's
-//                                for from the certificate's own OU field
-//                                (the same Stellar PK the CSR's OU already
-//                                named -- no env var needed to say so
-//                                again), confirms its public key matches
-//                                that identity's already-generated private
-//                                key (proof this is really the cert *this*
-//                                CSR asked for, not a mismatched paste), and
-//                                stores it as cert.pem alongside cert.key --
-//                                the same two files mtls.mjs's own
-//                                readCert() already expects, so this
-//                                identity is immediately usable for real
-//                                mTLS with no further wiring. Also reads
-//                                TG_JR_SK back from the sidecar main() left
-//                                behind and saves it under
-//                                ~/.config/.<network>/<pk>.sk (the same
-//                                convention every other stable identity --
-//                                Дід Alik, JA2, ... -- already uses), and
-//                                writes an extras.json naming this identity
-//                                <name> (typically ${WHOAMI}) -- together,
-//                                this Requester becomes a fully-fledged,
-//                                find-pk.mjs-resolvable identity the moment
-//                                its cert lands, not just a disposable
-//                                one-shot CSR. <name> containing a space
-//                                (e.g. "Дід Alik") gets its last word saved
-//                                as an alias -- find-pk.mjs's own header
-//                                explains why: a multi-word name can never
-//                                safely sit in a Make ${TEST} target
-//                                position, only an alias can.
+//   node join.mjs         -- the whole of BIT 2 in one invocation
+//                                (ccddh.md's "automate join's cert
+//                                chores, keep human authorization"
+//                                round): generate a CSR, RTOJ against the
+//                                target Job's real asset, request `join`
+//                                once that trade fills, then wait (no
+//                                fixed timeout by default) for a human to
+//                                approve or reject it via
+//                                join-approve.mjs (tg/ja/join-approve.mjs,
+//                                this box only -- it automates submitting
+//                                the CSR to Cloudflare and delivering the
+//                                signed cert back, but still requires an
+//                                explicit y/N from a real person first).
+//                                Once approved, stores the cert itself --
+//                                see storeCert()'s own header for exactly
+//                                what that does (cert.pem/cert.key,
+//                                promoting this Requester to a full,
+//                                stable, find-pk.mjs-resolvable identity).
+//                                No second, separate invocation needed any
+//                                more.
+//   node join.mjs <name>  -- the old, manual two-step flow's own second
+//                                half, kept for anyone still mid-flow
+//                                against a previous build: reads a PEM
+//                                certificate pasted on stdin (e.g. after
+//                                manually submitting the CSR to
+//                                Cloudflare's own API) and hands it to
+//                                storeCert(). <name> containing a space
+//                                (e.g. "Дід Alik") gets its last word
+//                                saved as an alias -- find-pk.mjs's own
+//                                header explains why: a multi-word name
+//                                can never safely sit in a Make ${TEST}
+//                                target position, only an alias can.
 
 import { execFile } from 'node:child_process' // {{{1
 import fs from 'node:fs/promises'
@@ -105,6 +107,7 @@ import WebSocket from 'ws'
 import { generate_keypair } from '@amissine/daeh/sdk.js'
 import { job } from '@amissine/daeh'
 import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
+import { httpize } from '@amissine/daeh/util.mjs'
 
 const execFileP = promisify(execFile)
 
@@ -117,13 +120,16 @@ function readStdin () { // {{{1
   });
 }
 
-//function certDirFor (pk) {{{1
+//export function certDirFor (pk) {{{1
 /** Where this identity's TLS keypair/CSR/cert live -- PK-keyed, same
  * layout mtls.mjs's own CERT_BASE uses, so a cert stored here needs no
  * further wiring to become usable. Shared by main() (CSR generation) and
  * mainCert() (storing the signed cert later) so both land in the exact
- * same directory for the same identity. */
-function certDirFor (pk) {
+ * same directory for the same identity. Exported (ccddh.md's "automate
+ * join's cert chores" round) so compete.mjs can check whether an
+ * identity already has a real cert before deciding whether it needs to
+ * join at all. */
+export function certDirFor (pk) {
   return process.env.JOIN_CERT_DIR ?? `${process.env.HOME}/.config/.cloudflare-job-fair/${pk}`;
 }
 
@@ -144,11 +150,13 @@ function makeOutbox () {
   };
 }
 
-//async function generateCsr (pk, cn, dir) {{{1
+//export async function generateCsr (pk, cn, dir) {{{1
 /** Generates a fresh TLS keypair + CSR locally -- OU set to the
  * Requester's own Stellar PK, the same convention E/P/F's own certs use
- * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`. */
-async function generateCsr (pk, cn, dir) {
+ * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`.
+ * Exported (ccddh.md's "automate join's cert chores" round) so
+ * compete.mjs can generate its own CSR when it needs to join first. */
+export async function generateCsr (pk, cn, dir) {
   await fs.mkdir(dir, { recursive: true })
   const keyPath = path.join(dir, 'cert.key')
   const csrPath = path.join(dir, 'cert.csr')
@@ -198,6 +206,51 @@ export async function requestJoin ({
   return reply;
 }
 
+//async function pollJoinStatus (id, wsUrl, timeoutMs) {{{1
+/** Polls tg/ws's own /catalog/join-status (see index.ts's joinStatusFetch)
+ * until a human has actually acted on this request via join-approve.mjs
+ * -- there's no fixed SLA on a human looking at something, so this waits
+ * forever by default (same "unset bound waits forever" convention this
+ * codebase already uses for TG_GRANT_TIMEOUT_MS etc.), optionally bounded
+ * by JOIN_POLL_TIMEOUT_MS. Returns the full {status, cert?, message?}
+ * entry once it's no longer 404 (nobody's acted yet). */
+async function pollJoinStatus (id, wsUrl, timeoutMs) {
+  const origin = new URL(wsUrl).origin
+  const statusUrl = `${httpize(origin)}/catalog/join-status?id=${id}`
+  const deadline = timeoutMs ? Date.now() + timeoutMs : Infinity
+  for (;;) {
+    const res = await fetch(statusUrl)
+    if (res.status === 200) return await res.json();
+    if (res.status !== 404) throw new Error(`join-status: ${statusUrl} -> ${res.status}`);
+    if (Date.now() >= deadline) throw new Error(`join-status: still pending after ${timeoutMs}ms`);
+    await new Promise(resolve => setTimeout(resolve, 10_000))
+  }
+}
+
+//export async function joinAndWait (...) {{{1
+/** The whole of BIT 2 past CSR generation: RTOJ, Match under 'join',
+ * send the CSR, then wait (pollJoinStatus()'s own no-fixed-SLA default)
+ * for a human to act on it via join-approve.mjs, storing the result
+ * itself the moment it's ready -- no separate, later invocation needed.
+ * Extracted from main() (ccddh.md's "automate join's cert chores" round)
+ * so compete.mjs can reuse exactly this sequence for a first-time
+ * visitor with no cert yet, instead of duplicating it. Returns the
+ * identity's own pk once its cert is stored. */
+export async function joinAndWait ({
+  kp, ownerPk, assetCode, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  csr, network = 'testnet', email, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
+}) {
+  const reply = await requestJoin({ kp, ownerPk, assetCode, wsUrl, csr, network, email, matchTimeoutMs, onLog })
+  onLog(`Agent reply: ${JSON.stringify(reply)}`)
+  if (reply.status !== 'queued') throw new Error(`join-agent didn't queue this: ${JSON.stringify(reply)}`);
+
+  onLog(`queued as ${reply.id} -- waiting for a human to approve or reject...`)
+  const status = await pollJoinStatus(reply.id, wsUrl, pollTimeoutMs)
+  if (status.status === 'rejected') throw new Error(`join rejected: ${status.message}`);
+
+  return await storeCert({ cert: status.cert, name });
+}
+
 async function main () { // {{{1
   const ownerPk = process.env.TG_ISSUER_PK
   if (!ownerPk) throw new Error('TG_ISSUER_PK must be set (the real Job Owners own Stellar public key)');
@@ -226,14 +279,18 @@ async function main () { // {{{1
   await fs.writeFile(path.join(dir, 'sidecar.json'), JSON.stringify({ network, sk: process.env.TG_JR_SK }) + '\n')
   console.log(`[join] generated CSR for ${pk} at ${csrPath}\n       (private key: ${keyPath})`)
 
-  const reply = await requestJoin({
+  const storedPk = await joinAndWait({
     kp, ownerPk, assetCode,
     wsUrl: process.env.TG_WS_URL,
     csr, network, email,
+    name: process.env.JOIN_NAME, // see this file's own header -- not
+    // process.argv[2], which the CLI dispatcher (this file's own bottom)
+    // uses to pick mainCert() over main() in the first place.
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
-    onLog: line => console.log('[join] gate:', line),
+    pollTimeoutMs: process.env.JOIN_POLL_TIMEOUT_MS ? Number(process.env.JOIN_POLL_TIMEOUT_MS) : undefined,
+    onLog: line => console.log('[join]', line),
   })
-  console.log('[join] Agent reply:', reply)
+  console.log(`[join] BIT 2 complete for ${storedPk}`)
 }
 
 //async function ouOf (certPath) {{{1
@@ -249,22 +306,26 @@ async function ouOf (certPath) {
   return m[1].trim();
 }
 
-//async function mainCert (name) {{{1
-/** `node join.mjs cert <name>` -- completes BIT 2 (see this file's own
- * header): reads a signed PEM certificate from stdin, recovers which
- * identity it's for from the cert's own OU field, and stores it as
- * cert.pem next to that identity's already-generated cert.key, the same
- * two files mtls.mjs's own readCert() expects. Validates the cert's own
- * public key matches the stored private key first (comparing RSA moduli)
- * -- the one thing that actually proves this is the certificate *this*
- * CSR asked for, not some other paste. Then promotes the identity to a
- * full, stable one: TG_JR_SK (read back from main()'s own sidecar, not
- * re-asked for) saved under ~/.config/.<network>/<pk>.sk, and an
- * extras.json naming it <name> (with a last-word alias if <name> has a
- * space -- see this file's own header on why). */
-async function mainCert (name) {
-  const cert = (await readStdin()).trim() + '\n'
-  if (!cert.includes('BEGIN CERTIFICATE')) throw new Error('no PEM certificate found on stdin');
+//export async function storeCert ({ cert, name }) {{{1
+/** The actual BIT 2 completion logic (see this file's own header and
+ * mainCert()'s own, below): recovers which identity `cert` is for from
+ * its own OU field, stores it as cert.pem next to that identity's
+ * already-generated cert.key, the same two files mtls.mjs's own
+ * readCert() expects. Validates the cert's own public key matches the
+ * stored private key first (comparing RSA moduli) -- the one thing that
+ * actually proves this is the certificate *this* CSR asked for, not some
+ * other paste. Then promotes the identity to a full, stable one:
+ * TG_JR_SK (read back from main()'s own sidecar, not re-asked for) saved
+ * under ~/.config/.<network>/<pk>.sk, and an extras.json naming it <name>
+ * (with a last-word alias if <name> has a space -- see this file's own
+ * header on why). Extracted from mainCert() (ccddh.md's "automate join's
+ * cert chores" round) so main()'s own auto-poll path can call this
+ * directly, with a cert already in hand from join-status rather than
+ * from stdin -- mainCert() itself is now just that stdin-reading wrapper,
+ * kept for the existing manual, paste-it-yourself flow. Returns the
+ * identity's own pk. */
+export async function storeCert ({ cert, name }) {
+  if (!cert.includes('BEGIN CERTIFICATE')) throw new Error('no PEM certificate found');
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'join-cert-'))
   let pk
@@ -319,6 +380,17 @@ async function mainCert (name) {
   // moment longer than it's needed, now that it's safely stored under
   // ~/.config/.<network>/<pk>.sk above.
   await fs.rm(path.join(dir, 'sidecar.json'), { force: true })
+  return pk;
+}
+
+//async function mainCert (name) {{{1
+/** `node join.mjs <name>` -- the existing manual flow: reads a signed PEM
+ * certificate pasted on stdin and hands it to storeCert(). Kept for
+ * anyone still mid-flow this way; main()'s own auto-poll path (this same
+ * round) no longer needs a second, separate invocation at all. */
+async function mainCert (name) {
+  const cert = (await readStdin()).trim() + '\n'
+  await storeCert({ cert, name })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) { // {{{1

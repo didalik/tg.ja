@@ -183,6 +183,10 @@ async function main () { // {{{1
   const outbox = makeOutbox()
   const gen = job(actor, {
     aud, label: aud === 'calc' ? 'Calc' : 'Echo', outbox,
+    // Which specific Agent's offer to match -- the one this Requester's
+    // own gate trade just paid, not just any offer sharing this aud (see
+    // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
+    targetPk: window.process.env.TG_ISSUER_PK,
     matchTimeoutMs: 30_000,
   })
   await waitForType(gen, 'matched')

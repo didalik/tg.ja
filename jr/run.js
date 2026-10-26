@@ -128,6 +128,10 @@ async function main () { // {{{1
 
   const gen = job(actor, {
     aud: 'echo', label: 'Echo', outbox,
+    // Which specific Agent's offer to match -- the one this Requester's
+    // own gate trade just paid, not just any offer sharing this aud (see
+    // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
+    targetPk: process.env.TG_ISSUER_PK,
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
   })
   let jobError // set on a daeh 'error' event (e.g. match/relay timeout) -- thrown below
