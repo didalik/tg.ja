@@ -9,3 +9,6 @@ node_modules/
 *.log
 intro.html
 ja.html
+
+# npm {{{1
+package-lock.json
