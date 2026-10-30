@@ -36,6 +36,14 @@
 //   CSR_NETWORK    -- optional, defaults to 'testnet' -- Дід Alik's own
 //                     bookkeeping only, not validated by any JA
 //   CSR_EMAIL      -- required: where the issued cert should be sent
+//   CSR_INVITE, CSR_INVITE_PAYMENT_TX -- optional, both-or-neither (cnj.md's
+//                     trustee round): a signed invite from a current JI
+//                     (see tg/invite.mjs's own output) and that same
+//                     invite's own paired payment transaction hash --
+//                     lets csr-approve.mjs auto-approve this request
+//                     unconditionally instead of waiting on a human.
+//                     Unset (the default): the normal human-review path,
+//                     unchanged.
 //   CSR_CN         -- optional, defaults to 'csr-<shortid>' -- the CSR's
 //                     own CN field
 //   CSR_CERT_DIR   -- optional, defaults to this identity's own
@@ -167,12 +175,16 @@ export async function generateCsr (pk, cn, dir) {
  * CSR:<ownerPk> asset (gate.js's own buyGrant(), an ordinary gate trade
  * -- this is the only proof of purchase this flow gets now, no RTOJ
  * involved at all), then Matches under aud: 'csr' and sends
- * {csr, network, email}, returning the Agent's parsed JSON reply
- * alongside the Stellar keypair the gate trade used (needed later for
- * payBack() once/if the cert is actually issued). */
+ * {csr, network, email, invite?, paymentTx?}, returning the Agent's
+ * parsed JSON reply alongside the Stellar keypair the gate trade used
+ * (needed later for payBack() once/if the cert is actually issued).
+ * invite/paymentTx (cnj.md's trustee round -- see tg/invite.mjs) are
+ * both-or-neither: a signed invite with no payment to back it (or vice
+ * versa) can never pass csr-approve.mjs's own verification either way,
+ * so there's no point sending just one. */
 export async function requestCsr ({
   kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
-  csr, network, email, matchTimeoutMs, onLog = () => {},
+  csr, network, email, invite, paymentTx, matchTimeoutMs, onLog = () => {},
 }) {
   process.env.TG_ISSUER_PK = ownerPk
   process.env.TG_ASSET_CODE ??= 'CSR'
@@ -184,7 +196,7 @@ export async function requestCsr ({
     app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
   }
   const outbox = makeOutbox()
-  outbox.push(JSON.stringify({ csr, network, email }))
+  outbox.push(JSON.stringify({ csr, network, email, ...(invite && paymentTx ? { invite, paymentTx } : {}) }))
   outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
   const gen = job(actor, { aud: 'csr', label: 'Csr', outbox, targetPk: ownerPk, matchTimeoutMs })
@@ -235,9 +247,11 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
  * is stored. */
 export async function csrAndWait ({
   kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
-  csr, network = 'testnet', email, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
+  csr, network = 'testnet', email, invite, paymentTx, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
 }) {
-  const { reply, requesterKp } = await requestCsr({ kp, ownerPk, wsUrl, csr, network, email, matchTimeoutMs, onLog })
+  const { reply, requesterKp } = await requestCsr({
+    kp, ownerPk, wsUrl, csr, network, email, invite, paymentTx, matchTimeoutMs, onLog,
+  })
   onLog(`Agent reply: ${JSON.stringify(reply)}`)
   if (reply.status !== 'queued') throw new Error(`csr job didn't queue this: ${JSON.stringify(reply)}`);
 
@@ -280,6 +294,8 @@ async function main () { // {{{1
     kp, ownerPk,
     wsUrl: process.env.TG_WS_URL,
     csr, network, email,
+    invite: process.env.CSR_INVITE,
+    paymentTx: process.env.CSR_INVITE_PAYMENT_TX,
     name: process.env.CSR_NAME, // see this file's own header -- not
     // process.argv[2], which the CLI dispatcher (this file's own bottom)
     // uses to pick mainCert() over main() in the first place.
