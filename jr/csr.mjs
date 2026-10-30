@@ -65,8 +65,8 @@
 //                                trade), Match under aud:'csr', send the
 //                                CSR, then wait (no fixed timeout by
 //                                default) for a human to approve or
-//                                reject it via join-approve.mjs
-//                                (tg/ja/join-approve.mjs, this box only --
+//                                reject it via csr-approve.mjs
+//                                (tg/ja/csr-approve.mjs, this box only --
 //                                it automates submitting the CSR to
 //                                Cloudflare and delivering the signed
 //                                cert back, but still requires an
@@ -203,7 +203,7 @@ export async function requestCsr ({
 
 //async function pollJoinStatus (id, wsUrl, timeoutMs) {{{1
 /** Polls tg/ws's own /catalog/join-status (see index.ts's joinStatusFetch)
- * until a human has actually acted on this request via join-approve.mjs
+ * until a human has actually acted on this request via csr-approve.mjs
  * -- there's no fixed SLA on a human looking at something, so this waits
  * forever by default (same "unset bound waits forever" convention this
  * codebase already uses for TG_GRANT_TIMEOUT_MS etc.), optionally bounded
@@ -225,7 +225,7 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
 //export async function csrAndWait (...) {{{1
 /** The whole flow past CSR generation: buy CSR, Match under 'csr', send
  * the CSR, then wait (pollJoinStatus()'s own no-fixed-SLA default) for a
- * human to act on it via join-approve.mjs. On rejection, throws --
+ * human to act on it via csr-approve.mjs. On rejection, throws --
  * there's no refund of the XLM paid yet (cnj.md's own reimbursement-on-
  * rejection idea is real but not built here; this is a later, separate
  * piece). On approval, pays the CSR unit back (PoD, same as any other

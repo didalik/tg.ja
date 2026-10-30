@@ -20,7 +20,7 @@
 // every test job is the same trivial echo. If this identity has no cert
 // yet, this gets one first (csr.mjs's own csrAndWait() -- CSR, a real
 // gate trade against the Owner's own CSR asset, queue, then wait for a
-// human's own explicit approval via join-approve.mjs before a real cert
+// human's own explicit approval via csr-approve.mjs before a real cert
 // comes back).
 //
 // Getting a cert and getting resale inventory are two separate steps
@@ -30,7 +30,7 @@
 // explicitly, one after the other below; a returning visitor (already
 // has a cert) skips straight to RTOJ-for-inventory, same as before.
 //
-// Runs no owner-side code at all beyond what join-approve.mjs itself
+// Runs no owner-side code at all beyond what csr-approve.mjs itself
 // requires (a human, explicitly, on this one specific box): a new
 // toll_gate_csr.service (run.js with TG_AGENT_AUD=csr) is what actually
 // sells the CSR gate trade below, and toll_gate_join.service's own RTOJ
