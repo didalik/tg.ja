@@ -33,7 +33,7 @@ import { httpize } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
 //function makeOutbox () {{{1
-/** Live, push-based outbox -- same shape join.mjs's own uses (push()
+/** Live, push-based outbox -- same shape csr.mjs's own uses (push()
  * resolves an already-waiting receive() immediately if there is one,
  * otherwise queues), not run.js's own pre-queued one-shot version. Lets
  * the chat loop below feed lines in as they're typed, one job() session

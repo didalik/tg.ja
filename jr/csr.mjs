@@ -1,34 +1,31 @@
 #!/usr/bin/env node
 
-// tg/ja/public/jr/join.mjs -- the join Use Case's Requester side {{{1
-// (ccddh.md's "The join Use Case and its BITs", round 34's CSR fix, and
-// the later RTOJ-redesign round that replaced the gate entirely):
-// generates the Requester's own Stellar keypair and TLS CSR locally (the
-// private key never leaves this process), then -- instead of buying a
-// separate 'JOIN' asset with XLM -- does an RTOJ trade (daeh/rtoj.mjs's
-// own buyRtoj() -- promoted there from a k2-parent-repo-only tg/ja/rtoj.mjs,
-// since this submodule needs to resolve it standing alone, same reason
-// stellar.mjs was promoted into daeh, round 6) against the real asset of
-// whichever Job it actually wants
-// to be allowed to offer (TG_ASSET_CODE, e.g. ECHO). That trade is the
-// only PoP this flow gets; once it fills, this applicant (and only this
-// applicant, until it's used) can Match under aud: 'join' at all (see
-// join-agent.mjs's own allowlist check) and send
-// {kind, csr, network, email}.
+// tg/ja/public/jr/csr.mjs -- the csr Job's Requester side (cnj.md), {{{1
+// replacing the old join Use Case's RTOJ-based bootstrap entirely: csr
+// is now a real, priced Job like echo/calc, bought with an ordinary gate
+// trade (gate.js's own buyGrant()) against the Owner's own CSR:<ownerPk>
+// asset, instead of an RTOJ trade against some *other*, unrelated Job's
+// real asset. That trade is this flow's only proof of purchase now.
+// Generates the Requester's own Stellar keypair and TLS CSR locally (the
+// private key never leaves this process).
 //
-// No more requestJoin()-by-a-forwarder ("join calling join", round 34) --
-// only the real Job Owner's own join-server.mjs ever offers aud: 'join'
-// now, so this is only ever called by the actual applicant.
+// One real behavior change this brings, worth being explicit about: the
+// old RTOJ-against-ECHO trade doubled as both "prove you may join" *and*
+// "here's your first unit of ECHO to resell" in one step (ccddh.md's
+// RTOJ-redesign round). Buying CSR specifically no longer grants any
+// resale inventory at all -- getting a cert and getting something to
+// resell are two separate concerns now (cnj.md's own csr/sell split).
+// compete.mjs's own first-time branch does a separate buyRtoj() call
+// for that, right after this completes.
 //
 // Env (direct CLI use):
 //   TG_ISSUER_PK   -- required: the real Job Owner's own Stellar public key
-//   TG_ASSET_CODE  -- required: which Job's real asset to RTOJ against
-//                     (e.g. ECHO) -- no default any more, since 'JOIN'
-//                     doesn't exist as its own asset to fall back to.
-//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see daeh/rtoj.mjs. Setting TG_JR_SK up
-//                     front (rather than letting buyRtoj() generate one)
+//   TG_ASSET_CODE  -- optional, defaults to 'CSR'
+//   TG_PRICE       -- optional, defaults to '1' -- must match the Owner's
+//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js. Setting TG_JR_SK up
+//                     front (rather than letting buyGrant() generate one)
 //                     is what makes this script's own CSR/OU and the
-//                     RTOJ-trade identity the same stable keypair (round
+//                     gate-trade identity the same stable keypair (round
 //                     20's MRT design, same as sh's E/P/F). Only needed
 //                     for the default mode -- `cert` mode (below) needs
 //                     nothing from the environment at all, since it reads
@@ -36,54 +33,53 @@
 //                     separate, later process invocation).
 //   TG_WS_URL      -- optional, defaults to the qa deploy
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000
-//   JOIN_NETWORK   -- optional, defaults to 'testnet' -- Дід Alik's own
-//                     bookkeeping only (round 34), not validated by any JA
-//   JOIN_EMAIL     -- required: where the issued cert should be sent
-//   JOIN_CN        -- optional, defaults to 'join-<shortid>' -- the CSR's
+//   CSR_NETWORK    -- optional, defaults to 'testnet' -- Дід Alik's own
+//                     bookkeeping only, not validated by any JA
+//   CSR_EMAIL      -- required: where the issued cert should be sent
+//   CSR_CN         -- optional, defaults to 'csr-<shortid>' -- the CSR's
 //                     own CN field
-//   JOIN_CERT_DIR  -- optional, defaults to this identity's own
+//   CSR_CERT_DIR   -- optional, defaults to this identity's own
 //                     ~/.config/.cloudflare-job-fair/<pk>/ (same PK-keyed
 //                     layout as E/P/F's own certs, ccddh.md's "Keys and
 //                     Certificates local storage, Redefined") -- where the
 //                     generated keypair/CSR are written, and where `cert`
 //                     mode (below) later looks for that same keypair once
 //                     the signed certificate comes back.
-//   JOIN_NAME      -- optional: naming this identity once its cert lands
+//   CSR_NAME       -- optional: naming this identity once its cert lands
 //                     (see storeCert()'s own header) -- replaces the old
-//                     `node join.mjs <name>` positional arg for this,
-//                     now that a single `node join.mjs` invocation does
-//                     the whole thing (see Usage below); that positional
+//                     `node csr.mjs <name>` positional arg for this, now
+//                     that a single `node csr.mjs` invocation does the
+//                     whole thing (see Usage below); that positional
 //                     form still exists, but only to select mainCert()
 //                     over main() entirely, so it can no longer also
 //                     carry a name for main()'s own use.
-//   JOIN_POLL_TIMEOUT_MS -- optional: give up waiting for a human to act
+//   CSR_POLL_TIMEOUT_MS -- optional: give up waiting for a human to act
 //                     on the queued request after this many ms (unset,
 //                     the default, waits forever -- there's no fixed SLA
 //                     on a human looking at something, same reasoning
 //                     TG_GRANT_TIMEOUT_MS's own default has).
 //
 // Usage:
-//   node join.mjs         -- the whole of BIT 2 in one invocation
-//                                (ccddh.md's "automate join's cert
-//                                chores, keep human authorization"
-//                                round): generate a CSR, RTOJ against the
-//                                target Job's real asset, request `join`
-//                                once that trade fills, then wait (no
-//                                fixed timeout by default) for a human to
-//                                approve or reject it via
-//                                join-approve.mjs (tg/ja/join-approve.mjs,
-//                                this box only -- it automates submitting
-//                                the CSR to Cloudflare and delivering the
-//                                signed cert back, but still requires an
+//   node csr.mjs         -- the whole flow in one invocation: generate a
+//                                CSR, buy 1 CSR:<ownerPk> (the gate
+//                                trade), Match under aud:'csr', send the
+//                                CSR, then wait (no fixed timeout by
+//                                default) for a human to approve or
+//                                reject it via join-approve.mjs
+//                                (tg/ja/join-approve.mjs, this box only --
+//                                it automates submitting the CSR to
+//                                Cloudflare and delivering the signed
+//                                cert back, but still requires an
 //                                explicit y/N from a real person first).
-//                                Once approved, stores the cert itself --
-//                                see storeCert()'s own header for exactly
-//                                what that does (cert.pem/cert.key,
-//                                promoting this Requester to a full,
-//                                stable, find-pk.mjs-resolvable identity).
-//                                No second, separate invocation needed any
-//                                more.
-//   node join.mjs <name>  -- the old, manual two-step flow's own second
+//                                Once approved, pays the CSR unit back
+//                                (PoD, same as any other Job) and stores
+//                                the cert itself -- see storeCert()'s own
+//                                header for exactly what that does
+//                                (cert.pem/cert.key, promoting this
+//                                Requester to a full, stable,
+//                                find-pk.mjs-resolvable identity). No
+//                                second, separate invocation needed.
+//   node csr.mjs <name>  -- the old, manual two-step flow's own second
 //                                half, kept for anyone still mid-flow
 //                                against a previous build: reads a PEM
 //                                certificate pasted on stdin (e.g. after
@@ -106,8 +102,8 @@ import { Keypair } from '@stellar/stellar-sdk'
 import WebSocket from 'ws'
 import { generate_keypair } from '@amissine/daeh/sdk.js'
 import { job } from '@amissine/daeh'
-import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 import { httpize } from '@amissine/daeh/util.mjs'
+import { buyGrant, payBack } from './gate.js'
 
 const execFileP = promisify(execFile)
 
@@ -125,12 +121,11 @@ function readStdin () { // {{{1
  * layout mtls.mjs's own CERT_BASE uses, so a cert stored here needs no
  * further wiring to become usable. Shared by main() (CSR generation) and
  * mainCert() (storing the signed cert later) so both land in the exact
- * same directory for the same identity. Exported (ccddh.md's "automate
- * join's cert chores" round) so compete.mjs can check whether an
- * identity already has a real cert before deciding whether it needs to
- * join at all. */
+ * same directory for the same identity. Exported so compete.mjs can check
+ * whether an identity already has a real cert before deciding whether it
+ * needs to get one first. */
 export function certDirFor (pk) {
-  return process.env.JOIN_CERT_DIR ?? `${process.env.HOME}/.config/.cloudflare-job-fair/${pk}`;
+  return process.env.CSR_CERT_DIR ?? `${process.env.HOME}/.config/.cloudflare-job-fair/${pk}`;
 }
 
 //function makeOutbox () {{{1
@@ -154,8 +149,7 @@ function makeOutbox () {
 /** Generates a fresh TLS keypair + CSR locally -- OU set to the
  * Requester's own Stellar PK, the same convention E/P/F's own certs use
  * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`.
- * Exported (ccddh.md's "automate join's cert chores" round) so
- * compete.mjs can generate its own CSR when it needs to join first. */
+ * Exported so compete.mjs can generate its own CSR when it needs one. */
 export async function generateCsr (pk, cn, dir) {
   await fs.mkdir(dir, { recursive: true })
   const keyPath = path.join(dir, 'cert.key')
@@ -168,31 +162,32 @@ export async function generateCsr (pk, cn, dir) {
   return { keyPath, csrPath, csr: await fs.readFile(csrPath, 'utf-8') };
 }
 
-//export async function requestJoin (...) {{{1
-/** The join Use Case's Requester-side flow, redesigned (ccddh.md's
- * RTOJ-redesign round): does an RTOJ trade (buyRtoj(), daeh/rtoj.mjs) against
- * ownerPk's real `assetCode` asset -- the only PoP this flow gets -- then
- * Matches under aud: 'join' (only this applicant, now that its trade
- * just filled, can) and sends {kind, csr, network, email}, returning the
- * Agent's parsed JSON reply. Deliberately no payBack() call here: there's
- * no PoD unless the Requester pays back voluntarily (ccddh.md) -- nothing
- * was necessarily delivered if the Owner rejects in the Relay phase, so
- * this doesn't assume delivery happened the way echo's own BIT can. */
-export async function requestJoin ({
-  kp, ownerPk, assetCode, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
-  kind = 'cert', csr, network, email, matchTimeoutMs, onLog = () => {},
+//export async function requestCsr (...) {{{1
+/** The csr Job's own Requester-side flow: buys 1 unit of the Owner's own
+ * CSR:<ownerPk> asset (gate.js's own buyGrant(), an ordinary gate trade
+ * -- this is the only proof of purchase this flow gets now, no RTOJ
+ * involved at all), then Matches under aud: 'csr' and sends
+ * {csr, network, email}, returning the Agent's parsed JSON reply
+ * alongside the Stellar keypair the gate trade used (needed later for
+ * payBack() once/if the cert is actually issued). */
+export async function requestCsr ({
+  kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  csr, network, email, matchTimeoutMs, onLog = () => {},
 }) {
-  await buyRtoj({ kp, ownerPk, assetCode, onLog })
-  onLog(`RTOJ trade filled on ${assetCode} -- allowlisted for aud:'join'`)
+  process.env.TG_ISSUER_PK = ownerPk
+  process.env.TG_ASSET_CODE ??= 'CSR'
+  process.env.TG_JR_SK = kp.secret()
+  const requesterKp = await buyGrant(onLog)
+  onLog(`gate grant confirmed on ${process.env.TG_ASSET_CODE}`)
 
   const actor = {
     app: 'jr', iss: { name: 'jr', pk: kp.publicKey() }, sk: kp.secret(), WebSocket, wsArgs: [wsUrl],
   }
   const outbox = makeOutbox()
-  outbox.push(JSON.stringify({ kind, csr, network, email }))
+  outbox.push(JSON.stringify({ csr, network, email }))
   outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
-  const gen = job(actor, { aud: 'join', label: 'Join', outbox, matchTimeoutMs })
+  const gen = job(actor, { aud: 'csr', label: 'Csr', outbox, targetPk: ownerPk, matchTimeoutMs })
   let reply, jobError
   let step = await gen.next()
   while (!step.done) {
@@ -202,8 +197,8 @@ export async function requestJoin ({
     step = await gen.next()
   }
   if (jobError) throw jobError;
-  if (!reply) throw new Error('requestJoin(): no reply received');
-  return reply;
+  if (!reply) throw new Error('requestCsr(): no reply received');
+  return { reply, requesterKp };
 }
 
 //async function pollJoinStatus (id, wsUrl, timeoutMs) {{{1
@@ -212,7 +207,7 @@ export async function requestJoin ({
  * -- there's no fixed SLA on a human looking at something, so this waits
  * forever by default (same "unset bound waits forever" convention this
  * codebase already uses for TG_GRANT_TIMEOUT_MS etc.), optionally bounded
- * by JOIN_POLL_TIMEOUT_MS. Returns the full {status, cert?, message?}
+ * by CSR_POLL_TIMEOUT_MS. Returns the full {status, cert?, message?}
  * entry once it's no longer 404 (nobody's acted yet). */
 async function pollJoinStatus (id, wsUrl, timeoutMs) {
   const origin = new URL(wsUrl).origin
@@ -227,42 +222,44 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
   }
 }
 
-//export async function joinAndWait (...) {{{1
-/** The whole of BIT 2 past CSR generation: RTOJ, Match under 'join',
- * send the CSR, then wait (pollJoinStatus()'s own no-fixed-SLA default)
- * for a human to act on it via join-approve.mjs, storing the result
- * itself the moment it's ready -- no separate, later invocation needed.
- * Extracted from main() (ccddh.md's "automate join's cert chores" round)
- * so compete.mjs can reuse exactly this sequence for a first-time
- * visitor with no cert yet, instead of duplicating it. Returns the
- * identity's own pk once its cert is stored. */
-export async function joinAndWait ({
-  kp, ownerPk, assetCode, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+//export async function csrAndWait (...) {{{1
+/** The whole flow past CSR generation: buy CSR, Match under 'csr', send
+ * the CSR, then wait (pollJoinStatus()'s own no-fixed-SLA default) for a
+ * human to act on it via join-approve.mjs. On rejection, throws --
+ * there's no refund of the XLM paid yet (cnj.md's own reimbursement-on-
+ * rejection idea is real but not built here; this is a later, separate
+ * piece). On approval, pays the CSR unit back (PoD, same as any other
+ * Job) and stores the cert. Extracted from main() so compete.mjs can
+ * reuse exactly this sequence for a first-time visitor with no cert yet,
+ * instead of duplicating it. Returns the identity's own pk once its cert
+ * is stored. */
+export async function csrAndWait ({
+  kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
   csr, network = 'testnet', email, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
 }) {
-  const reply = await requestJoin({ kp, ownerPk, assetCode, wsUrl, csr, network, email, matchTimeoutMs, onLog })
+  const { reply, requesterKp } = await requestCsr({ kp, ownerPk, wsUrl, csr, network, email, matchTimeoutMs, onLog })
   onLog(`Agent reply: ${JSON.stringify(reply)}`)
-  if (reply.status !== 'queued') throw new Error(`join-agent didn't queue this: ${JSON.stringify(reply)}`);
+  if (reply.status !== 'queued') throw new Error(`csr job didn't queue this: ${JSON.stringify(reply)}`);
 
   onLog(`queued as ${reply.id} -- waiting for a human to approve or reject...`)
   const status = await pollJoinStatus(reply.id, wsUrl, pollTimeoutMs)
-  if (status.status === 'rejected') throw new Error(`join rejected: ${status.message}`);
+  if (status.status === 'rejected') throw new Error(`csr rejected: ${status.message}`);
 
+  const txId = await payBack(requesterKp)
+  onLog(`PoD-TXID: ${txId}`)
   return await storeCert({ cert: status.cert, name });
 }
 
 async function main () { // {{{1
   const ownerPk = process.env.TG_ISSUER_PK
   if (!ownerPk) throw new Error('TG_ISSUER_PK must be set (the real Job Owners own Stellar public key)');
-  const assetCode = process.env.TG_ASSET_CODE
-  if (!assetCode) throw new Error('TG_ASSET_CODE must be set (which Job asset to RTOJ against, e.g. ECHO)');
-  const email = process.env.JOIN_EMAIL
-  if (!email) throw new Error('JOIN_EMAIL must be set (where the issued cert should be sent)');
-  const network = process.env.JOIN_NETWORK ?? 'testnet'
+  const email = process.env.CSR_EMAIL
+  if (!email) throw new Error('CSR_EMAIL must be set (where the issued cert should be sent)');
+  const network = process.env.CSR_NETWORK ?? 'testnet'
 
   if (!process.env.TG_JR_SK) { // {{{2 see this file's own header: setting
-    // this *before* buyRtoj() runs is what unifies the CSR/OU identity
-    // with the RTOJ-trade identity, the same stable-keypair pattern sh's
+    // this *before* requestCsr() runs is what unifies the CSR/OU identity
+    // with the gate-trade identity, the same stable-keypair pattern sh's
     // E/P/F already use.
     const [sk] = (await generate_keypair()).split(' ')
     process.env.TG_JR_SK = sk
@@ -270,27 +267,27 @@ async function main () { // {{{1
   const kp = Keypair.fromSecret(process.env.TG_JR_SK)
   const pk = kp.publicKey()
 
-  const cn = process.env.JOIN_CN ?? `join-${randomUUID().slice(0, 8)}`
+  const cn = process.env.CSR_CN ?? `csr-${randomUUID().slice(0, 8)}`
   const dir = certDirFor(pk)
   const { keyPath, csrPath, csr } = await generateCsr(pk, cn, dir)
   // Left for `cert` mode to read back later (see this file's own header) --
   // that's a separate, later process invocation with no other memory of
   // which network this request named, or of TG_JR_SK itself.
   await fs.writeFile(path.join(dir, 'sidecar.json'), JSON.stringify({ network, sk: process.env.TG_JR_SK }) + '\n')
-  console.log(`[join] generated CSR for ${pk} at ${csrPath}\n       (private key: ${keyPath})`)
+  console.log(`[csr] generated CSR for ${pk} at ${csrPath}\n       (private key: ${keyPath})`)
 
-  const storedPk = await joinAndWait({
-    kp, ownerPk, assetCode,
+  const storedPk = await csrAndWait({
+    kp, ownerPk,
     wsUrl: process.env.TG_WS_URL,
     csr, network, email,
-    name: process.env.JOIN_NAME, // see this file's own header -- not
+    name: process.env.CSR_NAME, // see this file's own header -- not
     // process.argv[2], which the CLI dispatcher (this file's own bottom)
     // uses to pick mainCert() over main() in the first place.
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
-    pollTimeoutMs: process.env.JOIN_POLL_TIMEOUT_MS ? Number(process.env.JOIN_POLL_TIMEOUT_MS) : undefined,
-    onLog: line => console.log('[join]', line),
+    pollTimeoutMs: process.env.CSR_POLL_TIMEOUT_MS ? Number(process.env.CSR_POLL_TIMEOUT_MS) : undefined,
+    onLog: line => console.log('[csr]', line),
   })
-  console.log(`[join] BIT 2 complete for ${storedPk}`)
+  console.log(`[csr] complete for ${storedPk}`)
 }
 
 //async function ouOf (certPath) {{{1
@@ -307,27 +304,24 @@ async function ouOf (certPath) {
 }
 
 //export async function storeCert ({ cert, name }) {{{1
-/** The actual BIT 2 completion logic (see this file's own header and
- * mainCert()'s own, below): recovers which identity `cert` is for from
- * its own OU field, stores it as cert.pem next to that identity's
- * already-generated cert.key, the same two files mtls.mjs's own
- * readCert() expects. Validates the cert's own public key matches the
- * stored private key first (comparing RSA moduli) -- the one thing that
- * actually proves this is the certificate *this* CSR asked for, not some
- * other paste. Then promotes the identity to a full, stable one:
- * TG_JR_SK (read back from main()'s own sidecar, not re-asked for) saved
- * under ~/.config/.<network>/<pk>.sk, and an extras.json naming it <name>
- * (with a last-word alias if <name> has a space -- see this file's own
- * header on why). Extracted from mainCert() (ccddh.md's "automate join's
- * cert chores" round) so main()'s own auto-poll path can call this
- * directly, with a cert already in hand from join-status rather than
- * from stdin -- mainCert() itself is now just that stdin-reading wrapper,
- * kept for the existing manual, paste-it-yourself flow. Returns the
- * identity's own pk. */
+/** Recovers which identity `cert` is for from its own OU field, stores
+ * it as cert.pem next to that identity's already-generated cert.key, the
+ * same two files mtls.mjs's own readCert() expects. Validates the cert's
+ * own public key matches the stored private key first (comparing RSA
+ * moduli) -- the one thing that actually proves this is the certificate
+ * *this* CSR asked for, not some other paste. Then promotes the identity
+ * to a full, stable one: TG_JR_SK (read back from main()'s own sidecar,
+ * not re-asked for) saved under ~/.config/.<network>/<pk>.sk, and an
+ * extras.json naming it <name> (with a last-word alias if <name> has a
+ * space -- see this file's own header on why). Extracted from mainCert()
+ * so main()'s own auto-poll path can call this directly, with a cert
+ * already in hand from join-status rather than from stdin -- mainCert()
+ * itself is now just that stdin-reading wrapper, kept for the existing
+ * manual, paste-it-yourself flow. Returns the identity's own pk. */
 export async function storeCert ({ cert, name }) {
   if (!cert.includes('BEGIN CERTIFICATE')) throw new Error('no PEM certificate found');
 
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'join-cert-'))
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'csr-cert-'))
   let pk
   try {
     const tmpCertPath = path.join(tmpDir, 'cert.pem')
@@ -349,11 +343,11 @@ export async function storeCert ({ cert, name }) {
   const dir = certDirFor(pk)
   const certPath = path.join(dir, 'cert.pem')
   await fs.writeFile(certPath, cert)
-  console.log(`[join] stored validated certificate for ${pk} at ${certPath}`)
+  console.log(`[csr] stored validated certificate for ${pk} at ${certPath}`)
 
   // Promotes this Requester to a full, stable identity -- see this file's {{{2
   // own header. sidecar.json is main()'s own, left alongside the CSR --
-  // not validated against anything (JOIN_NETWORK's own comment in main()
+  // not validated against anything (CSR_NETWORK's own comment in main()
   // applies here too), just read back verbatim.
   const { network, sk } = JSON.parse(await fs.readFile(path.join(dir, 'sidecar.json'), 'utf-8'))
   const skDir = path.join(process.env.HOME, '.config', `.${network}`)
@@ -361,7 +355,7 @@ export async function storeCert ({ cert, name }) {
   const skPath = path.join(skDir, `${pk}.sk`)
   await fs.writeFile(skPath, `${sk}\n`)
   await fs.chmod(skPath, 0o600)
-  console.log(`[join] stored Stellar secret key for ${pk} (network: ${network}) at ${skPath}`)
+  console.log(`[csr] stored Stellar secret key for ${pk} (network: ${network}) at ${skPath}`)
   // }}}2
 
   if (name) { // {{{2 find-pk.mjs's own header explains the alias: a
@@ -371,7 +365,7 @@ export async function storeCert ({ cert, name }) {
     const words = name.trim().split(/\s+/)
     const extras = words.length > 1 ? { name, aliases: [words[words.length - 1]] } : { name }
     await fs.writeFile(path.join(dir, 'extras.json'), JSON.stringify(extras) + '\n')
-    console.log(`[join] stored extras.json for ${pk}:`, extras)
+    console.log(`[csr] stored extras.json for ${pk}:`, extras)
   } // }}}2
 
   // sidecar.json has done its one job (carrying TG_JR_SK/network from
@@ -384,10 +378,10 @@ export async function storeCert ({ cert, name }) {
 }
 
 //async function mainCert (name) {{{1
-/** `node join.mjs <name>` -- the existing manual flow: reads a signed PEM
+/** `node csr.mjs <name>` -- the existing manual flow: reads a signed PEM
  * certificate pasted on stdin and hands it to storeCert(). Kept for
- * anyone still mid-flow this way; main()'s own auto-poll path (this same
- * round) no longer needs a second, separate invocation at all. */
+ * anyone still mid-flow this way; main()'s own auto-poll path no longer
+ * needs a second, separate invocation at all. */
 async function mainCert (name) {
   const cert = (await readStdin()).trim() + '\n'
   await storeCert({ cert, name })
@@ -399,7 +393,7 @@ if (import.meta.url === `file://${process.argv[1]}`) { // {{{1
   // there's no separate literal 'cert' keyword to also check for.
   const run = process.argv[2] ? mainCert(process.argv[2]) : main()
   run.catch(e => {
-    console.error('[join] FAILED', e)
+    console.error('[csr] FAILED', e)
     process.exitCode = 1
   })
 }

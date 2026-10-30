@@ -115,15 +115,15 @@ const actor = { // {{{1
 }
 
 const aud = process.env.TG_AGENT_AUD ?? 'echo' // {{{1
-// Overridable so join (ccddh.md's "The join Use Case and its BITs") can be
-// tested in isolation against this same run.js/gate.js, aud:'join' instead
-// of 'echo' -- not run concurrently with it yet (that needs this Agent to
-// run two gate+job loops at once, a separate problem). Defaults to 'echo',
-// unchanged from before this existed.
+// Overridable so csr (cnj.md's csr Job) can be run against this same
+// run.js/gate.js, aud:'csr' instead of 'echo' -- not run concurrently
+// with it yet (that needs this Agent to run two gate+job loops at once,
+// a separate problem). Defaults to 'echo', unchanged from before this
+// existed.
 
 const offer = {
   aud,
-  label: aud === 'join' ? 'Join' : aud === 'calc' ? 'Calc' : 'Echo',
+  label: aud === 'csr' ? 'Csr' : aud === 'calc' ? 'Calc' : 'Echo',
   spawn,
   indataEOD: true, // jr signals 'context.job.stdin.end()' once it's sent its message
   matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),

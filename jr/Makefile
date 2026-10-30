@@ -1,6 +1,6 @@
 # tg/ja/public/jr/Makefile -- `make` (or `make jr`) here starts jr, the {{{1
 # Toll Gate's Job Requester. Independently cloneable now, same as
-# db/public/requestor -- run.js/gate.js/join.mjs/etc. all import daeh as a
+# db/public/requestor -- run.js/gate.js/csr.mjs/etc. all import daeh as a
 # bare specifier (ccddh.md's "limited trust" round: daeh moved to its own
 # repo, didalik/daeh), not by relative path. Needs no `npm i` of its own
 # when run from inside this monorepo checkout, the way it's mostly been
@@ -14,13 +14,12 @@
 .ONESHELL:
 
 ENV ?= dev# | qa | prod
-JOB ?= echo# | join -- which Requester script this Makefile drives (ccddh.md's
-# "join Use Case BITs as templates" round): run.js (echo) auto-discovers
-# TG_ISSUER_PK from the registry if unset, but join.mjs (join) has no
-# registry entry of its own to discover (the registry is one slot per
-# smName, not per-aud -- see register.js's own header) and always needs
-# TG_ISSUER_PK/JOIN_EMAIL set explicitly by the caller, same as before this
-# dispatcher existed.
+JOB ?= echo# | csr -- which Requester script this Makefile drives: run.js
+# (echo) auto-discovers TG_ISSUER_PK from the registry if unset, but
+# csr.mjs (csr) has no registry entry of its own to discover (the registry
+# is one slot per smName, not per-aud -- see register.js's own header) and
+# always needs TG_ISSUER_PK/CSR_EMAIL set explicitly by the caller, same
+# as before this dispatcher existed.
 SHELL := /bin/bash
 TESTNET := $$HOME/.config/.testnet
 TG_MATCH_TIMEOUT_MS ?= 30000
@@ -31,10 +30,10 @@ jr:
 	@echo $@ started on $$(date) JOB=${JOB}
 	if [ '${ENV}' = 'dev' ]; then
 		ssh alec@mba "open $$TG_JA_URL" &
-	elif [ '${JOB}' = 'join' ]; then
+	elif [ '${JOB}' = 'csr' ]; then
 		TG_GRANT_TIMEOUT_MS='${TG_GRANT_TIMEOUT_MS}' \
 		TG_MATCH_TIMEOUT_MS='${TG_MATCH_TIMEOUT_MS}' \
-		node join.mjs &
+		node csr.mjs &
 	else
 		TG_GRANT_TIMEOUT_MS='${TG_GRANT_TIMEOUT_MS}' \
 		TG_MATCH_TIMEOUT_MS='${TG_MATCH_TIMEOUT_MS}' \
@@ -42,12 +41,12 @@ jr:
 	fi
 	echo $@ DONE;echo
 
-.PHONY: join-cert # {{{1
-join-cert:
+.PHONY: csr-cert # {{{1
+csr-cert:
 	@echo $@ started on $$(date)
 	echo '- paste the cert here to validate and store it:'
-	cat | node join.mjs '${WHOAMI}'
-	echo '- this completes BIT 2 for ${WHOAMI}'
+	cat | node csr.mjs '${WHOAMI}'
+	echo '- this completes certification for ${WHOAMI}'
 	echo $@ DONE;echo
 
 .PHONY: peer # {{{1
