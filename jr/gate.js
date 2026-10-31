@@ -1,28 +1,18 @@
 // tg/ja/public/jr/gate.js -- the Requester's half of the Toll Gate's gate {{{1
 // mechanism (see tg/ja/gate.js for the Agent's half and the full
-// mechanism). Establishes trust to the Agent's issued asset and places a
+// mechanism). Establishes trust to the JR asset and places a
 // matching buy offer -- Stellar's DEX auto-matches standing orders
 // whenever a compatible one appears, so this doesn't need to coordinate
 // timing with the Agent at all: place the order and wait, even if the
 // Agent's sell isn't live yet.
 //
 // Env:
-//   TG_ISSUER_PK       -- required: the Agent's own Stellar public key --
-//                        whoever runs the gate + Job and gets paid back
-//                        (see payBack). This is published/known ahead of
-//                        time, the same way any service's payment address
-//                        would be -- it can't be discovered via the WS
-//                        handshake, since the Agent doesn't even connect
-//                        to tg/ws until after its own gate opens.
-//   TG_ASSET_ISSUER_PK -- optional, defaults to TG_ISSUER_PK (today's only
-//                        real case, same account issues and sells). A
-//                        reseller (ccddh.md's RTOJ) sells real inventory
-//                        of someone *else's* asset, so the asset to
-//                        actually trust/buy has a different issuer than
-//                        TG_ISSUER_PK itself -- see tg/ja/gate.js's own
-//                        mirror-image env var.
-//   TG_ASSET_CODE      -- optional, defaults to 'TGA' -- must match the Agent's
-//   TG_PRICE           -- optional, defaults to '1' -- must match the Agent's
+//   JI_PK             -- required: the Job Issuer's own Stellar public key
+//   JA_PK             -- optional, defaults to JI_PK: the Agent's own Stellar
+//                        public key -- whoever runs the gate + Job and gets 
+//                        paid back (see payBack).
+//   TG_ASSET_CODE     -- required: the Job name, all caps
+//   TG_PRICE          -- optional, defaults to '1'
 //   TG_JR_SK    -- optional: reuse a specific Stellar identity instead
 //                        of generating (and funding) a fresh one each run
 //   TG_GRANT_TIMEOUT_MS -- optional: if the buy offer doesn't fill within
@@ -35,9 +25,15 @@ from '@stellar/stellar-sdk'
 import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
 from '@amissine/daeh/stellar.mjs'
 
-function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; } // {{{1
+function assetCode () { // {{{1
+  if (!process.env.TG_ASSET_CODE) throw new Error('TG_ASSET_CODE must be set')
+  return process.env.TG_ASSET_CODE; 
+}
 
-function assetIssuerPk () { return process.env.TG_ASSET_ISSUER_PK ?? process.env.TG_ISSUER_PK; } // {{{1
+function assetIssuerPk () { // {{{1
+  if (!process.env.JI_PK) throw new Error('JI_PK must be set')
+  return process.env.JI_PK; 
+}
 
 function price () { return process.env.TG_PRICE ?? '1'; } // {{{1
 
@@ -95,16 +91,17 @@ async function cancelBuyOffer (kp, asset) {
  * the Agent is the asset's real issuer or a reseller (ccddh.md's "Job
  * Owners"/RTOJ rounds) -- only an issuer can clawback, but anyone can
  * receive a payment, so this needs nothing from the Agent at all beyond
- * its own public key (already known -- TG_ISSUER_PK, same one buyGrant()
+ * its own public key (already known -- JA_PK, same one buyGrant()
  * bought from). Escalation (what happens if this never arrives) isn't
  * built -- the asset stays clawback-enabled for that, postponed on
  * purpose. Returns the submitted transaction's hash. */
 export async function payBack (kp) {
-  const issuerPk = process.env.TG_ISSUER_PK
+  const jaPk = process.env.JA_PK ?? process.env.JI_PK
+  if (!jaPk) throw new Error("JA_PK or JI_PKmust be set");
   const asset = new Asset(assetCode(), assetIssuerPk())
   const account = await server.loadAccount(kp.publicKey())
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.payment({ destination: issuerPk, asset, amount: '1' }))
+    .addOperation(Operation.payment({ destination: jaPk, asset, amount: '1' }))
     .setTimeout(60).build()
   tx.sign(kp)
   const result = await server.submitTransaction(tx)
@@ -112,7 +109,7 @@ export async function payBack (kp) {
 }
 
 //export async function buyGrant {{{1
-/** Places a standing buy offer for the Agent's gate asset and resolves,
+/** Places a standing buy offer for the JI's gate asset and resolves,
  * once it's filled, with the Stellar keypair used for the trade -- the
  * Requester needs it again later, to pay the gate asset back (see
  * payBack) once the Job is done. If
@@ -125,13 +122,13 @@ export async function buyGrant (
   grantTimeoutMs = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS)
                    : undefined
 ) {
-  const issuerPk = process.env.TG_ISSUER_PK // {{{2
-  if (!issuerPk) throw new Error('TG_ISSUER_PK must be set (the Agents own Stellar public key)');
+  const jaPk = process.env.JA_PK ?? process.env.JI_PK // {{{2
+  if (!jaPk) throw new Error("JA_PK or JI_PKmust be set");
   const kp = process.env.TG_JR_SK ? Keypair.fromSecret(process.env.TG_JR_SK) : Keypair.random()
   const asset = new Asset(assetCode(), assetIssuerPk())
 
   await ensureFunded(kp)
-  onLog(`trusting ${assetCode()}:${asset.issuer}`)
+  onLog(`trusting ${asset.code}:${asset.issuer}`)
   await trust(kp, asset)
 
   // Both the stream and the poll fallback below start from this same point

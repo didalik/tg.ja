@@ -47,8 +47,8 @@
 // Env:
 //   WHOAMI      -- optional, defaults to 'me' -- this identity's own name
 //   OWNER_PK    -- required: the real Owner's own Stellar public key (the
-//                  same one jr's own TG_ISSUER_PK would target to request
-//                  this Job directly)
+//                  same one jr's own JI_PK would target to request this
+//                  Job directly)
 //   ASSET_CODE  -- optional, defaults to 'ECHO'
 //   PRICE       -- optional, defaults to '0.5' -- XLM per unit sold
 //   DESCRIPTION -- optional, shown on the intro page's own catalog card
@@ -146,10 +146,10 @@ execFileSync('node', ['register.js', 'ja'], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    TG_ISSUER_PK: pk,
+    JA_PK: pk,
     TG_ASSET_CODE: assetCode,
     TG_PRICE: price,
-    TG_ASSET_ISSUER_PK: ownerPk,
+    JI_PK: ownerPk,
     TG_DESCRIPTION: process.env.DESCRIPTION ?? `Resold by ${whoami}`,
     TG_WS_URL: wsUrl,
     mTLS: 'true',
@@ -176,9 +176,9 @@ const result = spawnSync('node', ['../run.js'], {
     TG_AGENT_SK: sk,
     TG_AGENT_PK: pk,
     TG_AGENT_NAME: whoami,
-    TG_ISSUER_SK: sk,
+    JA_SK: sk,
     TG_ASSET_CODE: assetCode,
-    TG_ASSET_ISSUER_PK: ownerPk,
+    JI_PK: ownerPk,
     TG_PRICE: price,
     TG_WS_URL: wsUrl,
     mTLS: 'true',

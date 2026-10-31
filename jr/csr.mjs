@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // tg/ja/public/jr/csr.mjs -- the csr Job's Requester side (cnj.md), {{{1
-// replacing the old join Use Case's RTOJ-based bootstrap entirely: csr
+// replacing the old join Use Case's RTOJ-based bootstrap entirely: csr {{{2
 // is now a real, priced Job like echo/calc, bought with an ordinary gate
 // trade (gate.js's own buyGrant()) against the Owner's own CSR:<ownerPk>
 // asset, instead of an RTOJ trade against some *other*, unrelated Job's
@@ -9,7 +9,7 @@
 // Generates the Requester's own Stellar keypair and TLS CSR locally (the
 // private key never leaves this process).
 //
-// One real behavior change this brings, worth being explicit about: the
+// One real behavior change this brings, worth being explicit about: the {{{2
 // old RTOJ-against-ECHO trade doubled as both "prove you may join" *and*
 // "here's your first unit of ECHO to resell" in one step (ccddh.md's
 // RTOJ-redesign round). Buying CSR specifically no longer grants any
@@ -18,11 +18,12 @@
 // compete.mjs's own first-time branch does a separate buyRtoj() call
 // for that, right after this completes.
 //
-// Env (direct CLI use):
-//   TG_ISSUER_PK   -- required: the real Job Owner's own Stellar public key
+// Env (direct CLI use): {{{2
+//   OWNER_PK       -- required to buy the CSR:<ownerPk> Job
+//   JI_PK          -- optional, defaults to OWNER_PK
 //   TG_ASSET_CODE  -- optional, defaults to 'CSR'
-//   TG_PRICE       -- optional, defaults to '1' -- must match the Owner's
-//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js. Setting TG_JR_SK up
+//   TG_PRICE       -- optional, defaults to '1'
+//   TG_JR_SK, TG_GRANT_TIMEOUT_MS -- see gate.js. Setting TG_JR_SK up {{{3
 //                     front (rather than letting buyGrant() generate one)
 //                     is what makes this script's own CSR/OU and the
 //                     gate-trade identity the same stable keypair (round
@@ -30,7 +31,7 @@
 //                     for the default mode -- `cert` mode (below) needs
 //                     nothing from the environment at all, since it reads
 //                     TG_JR_SK back from its own sidecar instead (a
-//                     separate, later process invocation).
+//                     separate, later process invocation). }}}3
 //   TG_WS_URL      -- optional, defaults to the qa deploy
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000
 //   CSR_NETWORK    -- optional, defaults to 'testnet' -- Дід Alik's own
@@ -183,10 +184,10 @@ export async function generateCsr (pk, cn, dir) {
  * versa) can never pass csr-approve.mjs's own verification either way,
  * so there's no point sending just one. */
 export async function requestCsr ({
-  kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
   csr, network, email, invite, paymentTx, matchTimeoutMs, onLog = () => {},
 }) {
-  process.env.TG_ISSUER_PK = ownerPk
+  process.env.JI_PK = ownerPk
   process.env.TG_ASSET_CODE ??= 'CSR'
   process.env.TG_JR_SK = kp.secret()
   const requesterKp = await buyGrant(onLog)
@@ -246,7 +247,7 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
  * instead of duplicating it. Returns the identity's own pk once its cert
  * is stored. */
 export async function csrAndWait ({
-  kp, ownerPk, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
   csr, network = 'testnet', email, invite, paymentTx, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
 }) {
   const { reply, requesterKp } = await requestCsr({
@@ -265,8 +266,8 @@ export async function csrAndWait ({
 }
 
 async function main () { // {{{1
-  const ownerPk = process.env.TG_ISSUER_PK
-  if (!ownerPk) throw new Error('TG_ISSUER_PK must be set (the real Job Owners own Stellar public key)');
+  const ownerPk = process.env.OWNER_PK
+  if (!ownerPk) throw new Error('OWNER_PK must be set (the JIs own Stellar public key)');
   const email = process.env.CSR_EMAIL
   if (!email) throw new Error('CSR_EMAIL must be set (where the issued cert should be sent)');
   const network = process.env.CSR_NETWORK ?? 'testnet'

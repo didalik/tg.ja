@@ -20,7 +20,7 @@
 // quit (Ctrl-D), and payBack() happens once at the end -- pay once, chat
 // freely.
 //
-// Env: same as run.js (TG_ISSUER_PK, TG_WS_URL, TG_ASSET_CODE, TG_JR_SK,
+// Env: same as run.js (JI_PK, TG_WS_URL, TG_ASSET_CODE, TG_JR_SK,
 // TG_JR_NAME, TG_GRANT_TIMEOUT_MS, TG_MATCH_TIMEOUT_MS) -- registry
 // auto-discovery works the same way too.
 
@@ -98,7 +98,7 @@ async function main () { // {{{1
   let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
   process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
 
-  if (!process.env.TG_ISSUER_PK) {
+  if (!process.env.JI_PK) {
     const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
     const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
     const res = await fetch(registryUrl)
@@ -106,15 +106,19 @@ async function main () { // {{{1
       const entries = await res.json() // always an array now (possibly empty), never 404
       if (entries.length > 0) {
         const entry = entries[0] // server-sorted cheapest-priced first
-        process.env.TG_ISSUER_PK = entry.issuerPk
+        // entry.realIssuerPk is always populated server-side (defaults to
+        // entry.issuerPk itself when this isn't a reseller -- register.js's
+        // own header) -- JI_PK (the real asset to trust/buy) comes from
+        // there; JA_PK (the specific seller this trade actually goes
+        // through) from entry.issuerPk directly. Without JI_PK set
+        // correctly, gate.js falls back to trusting/buying entry.issuerPk's
+        // own self-issued look-alike instead of the real thing a reseller
+        // actually sells (caught live, ja.mjs: discovery found a
+        // reseller's real entry correctly, but the trade never filled --
+        // wrong asset).
+        process.env.JI_PK = entry.realIssuerPk ?? entry.issuerPk
+        process.env.JA_PK = entry.issuerPk
         process.env.TG_ASSET_CODE = entry.assetCode
-        // The real asset to trust/buy, when this entry is a reseller's
-        // own (gate.js's own mirror-image env var) -- without this,
-        // gate.js falls back to trusting/buying entry.issuerPk's own
-        // self-issued look-alike instead of the real thing it actually
-        // sells (caught live, ja.mjs: discovery found a reseller's real
-        // entry correctly, but the trade never filled -- wrong asset).
-        if (entry.realIssuerPk) process.env.TG_ASSET_ISSUER_PK = entry.realIssuerPk
         if (entry.price) process.env.TG_PRICE = entry.price
         wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
         console.error('[chat] registry: found', entry)
@@ -125,7 +129,7 @@ async function main () { // {{{1
       console.error(`[chat] registry: lookup failed (${registryUrl} -> ${res.status})`)
     }
   }
-  if (!process.env.TG_ISSUER_PK) throw new Error('TG_ISSUER_PK not set, directly or via the catalog -- nobody to chat with');
+  if (!process.env.JI_PK) throw new Error('JI_PK not set, directly or via the catalog -- nobody to chat with');
 
   const actor = { app: 'jr', iss: { name: process.env.TG_JR_NAME ?? 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
 
@@ -137,9 +141,10 @@ async function main () { // {{{1
   const gen = job(actor, {
     aud: 'echo', label: 'Echo', outbox,
     // Which specific Agent's offer to match -- the one this Requester's
-    // own gate trade just paid, not just any offer sharing this aud (see
+    // own gate trade just paid (JA_PK, when a reseller's own trade set it
+    // differently from JI_PK), not just any offer sharing this aud (see
     // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
-    targetPk: process.env.TG_ISSUER_PK,
+    targetPk: process.env.JA_PK ?? process.env.JI_PK,
     matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),
   })
   await waitForType(gen, 'matched')

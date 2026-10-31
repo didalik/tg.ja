@@ -26,7 +26,7 @@
 // Usage: node register.js <smName>
 //
 // Env:
-//   TG_ISSUER_PK   -- required: this Agent's own Stellar public key
+//   JA_PK          -- required: this Agent's own Stellar public key
 //   TG_ASSET_CODE  -- optional, defaults to 'TGA' -- must match gate.js's
 //   TG_PRICE       -- optional, defaults to '1' -- must match gate.js's
 //   TG_HOME_DOMAIN -- optional
@@ -38,10 +38,10 @@
 //                     Job, shown to a visitor picking between entries
 //                     that share one assetCode on purpose (ccddh.md --
 //                     same Job name, genuinely different offerings)
-//   TG_ASSET_ISSUER_PK -- optional, defaults to TG_ISSUER_PK: set this to
-//                     the real issuer's own PK when registering a
-//                     reseller (gate.js's own mirror-image env var) --
-//                     see types.ts's RegistryEntry.realIssuerPk
+//   JI_PK          -- optional, defaults to JA_PK: set this to the real
+//                     issuer's own PK when registering a reseller
+//                     (gate.js's own mirror-image env var) -- see
+//                     types.ts's RegistryEntry.realIssuerPk
 //   TG_WS_URL      -- optional, defaults to the qa deploy -- only its
 //                     origin matters here (the catalog is global, not
 //                     smName-scoped); https-ified to reach the registry
@@ -55,8 +55,8 @@ import { httpize } from '@amissine/daeh/util.mjs'
 const smName = process.argv[2]
 if (!smName) throw new Error('usage: node register.js <smName>');
 
-const issuerPk = process.env.TG_ISSUER_PK
-if (!issuerPk) throw new Error('TG_ISSUER_PK must be set (this Agents own Stellar public key)');
+const jaPk = process.env.JA_PK
+if (!jaPk) throw new Error('JA_PK must be set (this Agents own Stellar public key)');
 
 const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
 // new URL(path, base) only keeps base's own origin, discarding whatever
@@ -65,12 +65,12 @@ const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
 const registryUrl = new URL('/catalog/registry', httpize(wsUrl))
 
 const entry = {
-  issuerPk,
+  issuerPk: jaPk,
   smName,
   assetCode: process.env.TG_ASSET_CODE ?? 'TGA',
   price: process.env.TG_PRICE ?? '1',
   homeDomain: process.env.TG_HOME_DOMAIN,
-  realIssuerPk: process.env.TG_ASSET_ISSUER_PK ?? issuerPk,
+  realIssuerPk: process.env.JI_PK ?? jaPk,
   ...(process.env.TG_AUD ? { aud: process.env.TG_AUD } : {}),
   ...(process.env.TG_DESCRIPTION ? { description: process.env.TG_DESCRIPTION } : {}),
 }
@@ -81,7 +81,7 @@ const body = JSON.stringify(entry)
 // yet either way, so presenting none here is a no-op, not a regression.
 let agent
 try {
-  agent = mtlsAgent(issuerPk)
+  agent = mtlsAgent(jaPk)
 } catch { /* no cert for this PK -- register without one */ }
 
 await new Promise((resolve, reject) => {

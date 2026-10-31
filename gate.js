@@ -27,12 +27,15 @@
 // of time, the same way any service's payment address would be.
 //
 // Env:
-//   TG_ISSUER_SK      -- required: the Agent's own Stellar secret key --
+//   JA_SK             -- required: the Agent's own Stellar secret key --
 //                        the account that places the sell offer (and
 //                        whose trades are watched). Also the asset's own
-//                        issuer by default (see TG_ASSET_ISSUER_PK).
+//                        issuer by default (see JI_PK). Named JA_*, not
+//                        TG_ISSUER_*: this is just "which account is
+//                        this", not an assertion about being anyone's
+//                        real issuer (see run.js's own naming note).
 //   TG_ASSET_CODE     -- optional, defaults to 'TGA'
-//   TG_ASSET_ISSUER_PK -- optional, defaults to this account's own PK
+//   JI_PK             -- optional, defaults to this account's own PK
 //                        (today's only case: issuing and selling are the
 //                        same account). A reseller selling real,
 //                        already-acquired inventory of someone *else's*
@@ -52,7 +55,7 @@ import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server
 
 function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; } // {{{1
 
-function assetIssuerPk (kp) { return process.env.TG_ASSET_ISSUER_PK ?? kp.publicKey(); } // {{{1
+function assetIssuerPk (kp) { return process.env.JI_PK ?? kp.publicKey(); } // {{{1
 
 function price () { return process.env.TG_PRICE ?? '1'; } // {{{1
 
@@ -99,8 +102,8 @@ async function cancelStaleOffers (kp, asset) {
  * Agent building a clawback transaction for it to co-sign, so the Agent
  * no longer needs to know who the Requester even was). */
 export async function grant (onLog = () => {}) {
-  const sk = process.env.TG_ISSUER_SK
-  if (!sk) throw new Error('TG_ISSUER_SK must be set (this Agents own Stellar secret key)');
+  const sk = process.env.JA_SK
+  if (!sk) throw new Error('JA_SK must be set (this Agents own Stellar secret key)');
   const kp = Keypair.fromSecret(sk)
   const asset = new Asset(assetCode(), assetIssuerPk(kp))
 

@@ -23,7 +23,7 @@
 //                               daeh/lib/sdk.js's generate_keypair)
 //   TG_AGENT_NAME            -- optional, defaults to 'ja'
 //   TG_WS_URL                -- optional, defaults to the qa deploy
-//   TG_ISSUER_SK             -- optional: this Agent's own Stellar secret
+//   JA_SK                    -- optional: this Agent's own Stellar secret
 //                               key (see gate.js). If unset, gating is
 //                               skipped entirely (dev/test convenience) --
 //                               for real use this should always be set.
@@ -69,19 +69,19 @@ if (!sk || !pk) {
 }
 
 // Derived once, here, rather than left for each caller to also set: {{{1
-// gate.js only ever reads TG_ISSUER_SK, so this identity's own public key
+// gate.js only ever reads JA_SK, so this identity's own public key
 // otherwise doesn't exist anywhere in this process's own env -- but it's
 // inherited by every spawned job (job.ts's env = {...process.env}), and
-// join-agent.mjs needs it to apply the Job Owners rule (ccddh.md):
+// job-owner.mjs needs it to apply the Job Owners rule (ccddh.md):
 // comparing itself against the configured owner's PK silently always
 // came out false without this, since undefined never equals a real PK --
 // every instance, including the real owner, concluded it wasn't the owner
 // and forwarded to itself forever. Caught live: a real infinite loop,
 // each pass a real Stellar trade, before this fix existed. Named JA_PK,
-// not TG_ISSUER_PK -- this is just "which account is this", not an
-// assertion about being anyone's real issuer (see the Job Owners
-// round's own naming note).
-if (process.env.TG_ISSUER_SK) process.env.JA_PK = Keypair.fromSecret(process.env.TG_ISSUER_SK).publicKey()
+// not TG_ISSUER_PK (now JA_SK's own derived public key) -- this is just
+// "which account is this", not an assertion about being anyone's real
+// issuer (see the Job Owners round's own naming note).
+if (process.env.JA_SK) process.env.JA_PK = Keypair.fromSecret(process.env.JA_SK).publicKey()
 
 //function safeMtlsOptions (pk) {{{1
 /** mtlsOptions() throws (a real fs ENOENT) when mTLS=true but the named
@@ -133,18 +133,18 @@ const offer = {
   },
 }
 
-if (!process.env.TG_ISSUER_SK) { // {{{1
-  console.log('[ja] TG_ISSUER_SK not set -- gating skipped (dev/test only)')
+if (!process.env.JA_SK) { // {{{1
+  console.log('[ja] JA_SK not set -- gating skipped (dev/test only)')
 }
 
 const log = line => console.log('[ja] gate', line)
 
 //async function restock () {{{1
-/** A reseller (TG_ASSET_ISSUER_PK set -- ccddh.md's RTOJ) only ever holds
- * as much of the real Job asset as it's actually RTOJ'd, unlike the real
- * issuer (gate.js's own default case), who can always sell more of its
- * own asset regardless of balance. Selling out hits this Stellar-level,
- * not application-level: gate.js's own sell() rejects with a real
+/** A reseller (JI_PK set -- ccddh.md's RTOJ) only ever holds as much of
+ * the real Job asset as it's actually RTOJ'd, unlike the real issuer
+ * (gate.js's own default case), who can always sell more of its own
+ * asset regardless of balance. Selling out hits this Stellar-level, not
+ * application-level: gate.js's own sell() rejects with a real
  * TransactionFailedError, op_underfunded (caught live: JA3, resold out
  * after its one real unit, crashed here unhandled). Buys exactly one more
  * unit via the same RTOJ mechanism the join Use Case bootstraps into a
@@ -155,8 +155,8 @@ const log = line => console.log('[ja] gate', line)
  * round so a repeat offer from an already-seen buyer isn't silently
  * dropped forever). */
 async function restock () {
-  const kp = Keypair.fromSecret(process.env.TG_ISSUER_SK)
-  const ownerPk = process.env.TG_ASSET_ISSUER_PK ?? kp.publicKey()
+  const kp = Keypair.fromSecret(process.env.JA_SK)
+  const ownerPk = process.env.JI_PK ?? kp.publicKey()
   const assetCode = process.env.TG_ASSET_CODE ?? 'TGA'
   console.log(`[ja] out of stock -- restocking 1 ${assetCode} via RTOJ from ${ownerPk}`)
   await buyRtoj({ kp, ownerPk, assetCode, onLog: log })
@@ -164,7 +164,7 @@ async function restock () {
 
 console.log('[ja] waiting for a matched request...')
 for (;;) {
-  if (process.env.TG_ISSUER_SK) {
+  if (process.env.JA_SK) {
     console.log('[ja] gate closed, waiting for a grant...')
     try {
       await gateGrant(log)

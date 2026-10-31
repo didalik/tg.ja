@@ -4,7 +4,7 @@ import { job, } from '@amissine/daeh'
 import { httpize, wsize, } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack, } from './jr/gate.js'
 
-// gate.js/stellar.mjs read process.env.* (TG_ISSUER_PK, TG_ASSET_CODE, {{{1
+// gate.js/stellar.mjs read process.env.* (JI_PK, JA_PK, TG_ASSET_CODE, {{{1
 // TG_PRICE, TG_GRANT_TIMEOUT_MS, TG_STELLAR_NETWORK, ...) -- same trick
 // hx/public/tm.mjs uses to keep those reads from throwing in the browser:
 // each one just comes back undefined and falls through to its own ??
@@ -114,15 +114,16 @@ async function main () { // {{{1
   let aud = 'echo' // {{{2 overwritten below on a hit either way -- 'echo' is only the
   // fallback for entries that never set TG_AUD (every echo one so far).
   if (picked.get('issuerPk') && picked.get('smName')) {
-    window.process.env.TG_ISSUER_PK = picked.get('issuerPk')
-    if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
-    // A direct pin to a reseller's own entry still needs gate.js to know
-    // the *real* asset to trust/buy is someone else's, not this seller's
-    // own look-alike -- same gap as the discovery branch below, fixed
-    // the same way (caught live: JA3's own real resale, found correctly
-    // via realIssuerPk-scoped discovery, still bought the wrong,
+    // The specific seller this visitor picked -- JA_PK. A direct pin to a
+    // reseller's own entry still needs gate.js to know the *real* asset to
+    // trust/buy (JI_PK) is someone else's, not this seller's own
+    // look-alike -- same gap as the discovery branch below, fixed the
+    // same way (caught live: JA3's own real resale, found correctly via
+    // realIssuerPk-scoped discovery, still bought the wrong,
     // JA3-self-issued "ECHO" because nothing ever set this).
-    if (picked.get('realIssuerPk')) window.process.env.TG_ASSET_ISSUER_PK = picked.get('realIssuerPk')
+    window.process.env.JA_PK = picked.get('issuerPk')
+    window.process.env.JI_PK = picked.get('realIssuerPk') ?? picked.get('issuerPk')
+    if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
     if (picked.get('aud')) aud = picked.get('aud')
     wsUrl = `${origin}/${picked.get('smName')}`
     out(`picked: ${picked.get('assetCode') ?? window.process.env.TG_ASSET_CODE} from ${picked.get('issuerPk')}`)
@@ -143,15 +144,18 @@ async function main () { // {{{1
       if (realIssuerPk) entries = entries.filter(e => (e.realIssuerPk ?? e.issuerPk) === realIssuerPk);
       if (entries.length > 0) {
         const entry = entries[0] // server-sorted cheapest-priced first, scoped above if realIssuerPk was given
-        window.process.env.TG_ISSUER_PK = entry.issuerPk
+        // entry.realIssuerPk is always populated server-side (defaults to
+        // entry.issuerPk itself when this isn't a reseller) -- JI_PK (the
+        // real asset to trust/buy) comes from there; JA_PK (the specific
+        // seller this trade actually goes through) from entry.issuerPk
+        // directly. Without JI_PK set correctly, gate.js falls back to
+        // trusting/buying entry.issuerPk's own self-issued look-alike
+        // instead of the real thing it actually sells (caught live: JA3's
+        // own real resale, found correctly via discovery, still never
+        // filled -- wrong asset entirely).
+        window.process.env.JI_PK = entry.realIssuerPk ?? entry.issuerPk
+        window.process.env.JA_PK = entry.issuerPk
         window.process.env.TG_ASSET_CODE = entry.assetCode
-        // The real asset to trust/buy, when this entry is a reseller's
-        // own (gate.js's own mirror-image env var) -- without this,
-        // gate.js falls back to trusting/buying entry.issuerPk's own
-        // self-issued look-alike instead of the real thing it actually
-        // sells (caught live: JA3's own real resale, found correctly via
-        // discovery, still never filled -- wrong asset entirely).
-        if (entry.realIssuerPk) window.process.env.TG_ASSET_ISSUER_PK = entry.realIssuerPk
         if (entry.price) window.process.env.TG_PRICE = entry.price
         if (entry.aud) aud = entry.aud
         wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect
@@ -173,20 +177,21 @@ async function main () { // {{{1
   }
 
   let requesterKp
-  if (window.process.env.TG_ISSUER_PK) {
+  if (window.process.env.JI_PK) {
     requesterKp = await buyGrant(line => out(`gate: ${line}`))
     out('gate grant confirmed')
   } else {
-    out('TG_ISSUER_PK not set (via registry) -- gating skipped (dev/test only)')
+    out('JI_PK not set (via registry) -- gating skipped (dev/test only)')
   }
 
   const outbox = makeOutbox()
   const gen = job(actor, {
     aud, label: aud === 'calc' ? 'Calc' : 'Echo', outbox,
     // Which specific Agent's offer to match -- the one this Requester's
-    // own gate trade just paid, not just any offer sharing this aud (see
+    // own gate trade just paid (JA_PK, when a reseller's own trade set it
+    // differently from JI_PK), not just any offer sharing this aud (see
     // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
-    targetPk: window.process.env.TG_ISSUER_PK,
+    targetPk: window.process.env.JA_PK ?? window.process.env.JI_PK,
     matchTimeoutMs: 30_000,
   })
   await waitForType(gen, 'matched')

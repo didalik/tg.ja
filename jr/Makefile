@@ -15,11 +15,11 @@
 
 ENV ?= dev# | qa | prod
 JOB ?= echo# | csr -- which Requester script this Makefile drives: run.js
-# (echo) auto-discovers TG_ISSUER_PK from the registry if unset, but
-# csr.mjs (csr) has no registry entry of its own to discover (the registry
-# is one slot per smName, not per-aud -- see register.js's own header) and
-# always needs TG_ISSUER_PK/CSR_EMAIL set explicitly by the caller, same
-# as before this dispatcher existed.
+# (echo) auto-discovers JI_PK from the registry if unset, but csr.mjs
+# (csr) has no registry entry of its own to discover (the registry is one
+# slot per smName, not per-aud -- see register.js's own header) and
+# always needs OWNER_PK/CSR_EMAIL set explicitly by the caller, same as
+# before this dispatcher existed.
 SHELL := /bin/bash
 TESTNET := $$HOME/.config/.testnet
 TG_MATCH_TIMEOUT_MS ?= 30000
