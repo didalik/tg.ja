@@ -169,8 +169,6 @@ const result = spawnSync('node', ['../run.js'], {
   stdio: 'inherit',
   env: {
     ...process.env,
-    TG_AGENT_SK: sk,
-    TG_AGENT_PK: pk,
     TG_AGENT_NAME: whoami,
     JA_SK: sk,
     TG_ASSET_CODE: assetCode,

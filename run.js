@@ -19,14 +19,17 @@
 // toll_gate_reset/toll_gate_calc services run.
 //
 // Env:
-//   TG_AGENT_SK, TG_AGENT_PK -- this Agent's signing keypair (see
-//                               daeh/lib/sdk.js's generate_keypair)
+//   JA_SK                    -- required: this Agent's own Stellar secret
+//                               key (see gate.js) -- also this process's
+//                               own Match/Relay signing key (see
+//                               daeh/lib/sdk.js's generate_keypair);
+//                               ungated dev/test mode (a separate
+//                               TG_AGENT_SK/TG_AGENT_PK pair with no real
+//                               Stellar identity behind it) is retired --
+//                               every real caller already set both to the
+//                               same keypair anyway.
 //   TG_AGENT_NAME            -- optional, defaults to 'ja'
 //   TG_WS_URL                -- optional, defaults to the qa deploy
-//   JA_SK                    -- optional: this Agent's own Stellar secret
-//                               key (see gate.js). If unset, gating is
-//                               skipped entirely (dev/test convenience) --
-//                               for real use this should always be set.
 //   TG_MATCH_TIMEOUT_MS      -- optional, defaults to 30000: how long to
 //                               wait, once granted, for a Requester to
 //                               actually connect and match before giving
@@ -69,27 +72,29 @@ import { postJob } from '@amissine/daeh/post.mjs'
 import { httpize } from '@amissine/daeh/util.mjs'
 import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 
-const sk = process.env.TG_AGENT_SK // to sign/verify Match/Relay data {{{1
-const pk = process.env.TG_AGENT_PK
-if (!sk || !pk) {
-  console.error('TG_AGENT_SK and TG_AGENT_PK must be set (see generate_keypair)')
+const sk = process.env.JA_SK // to sign/verify Match/Relay data, {{{1
+// and to sign this identity's own gate trades (gate.js) -- one keypair,
+// one identity, now that ungated dev/test mode (a separate, cert-less
+// TG_AGENT_SK/TG_AGENT_PK pair) is retired: every real caller already
+// set both pairs to the same keypair anyway.
+if (!sk) {
+  console.error('JA_SK must be set (see generate_keypair)')
   process.exit(1)
 }
 
 // Derived once, here, rather than left for each caller to also set: {{{1
-// gate.js only ever reads JA_SK, so this identity's own public key
-// otherwise doesn't exist anywhere in this process's own env -- but it's
-// inherited by every spawned job (job.ts's env = {...process.env}), and
-// job-owner.mjs needs it to apply the Job Owners rule (ccddh.md):
+// it's inherited by every spawned job (job.ts's env = {...process.env}),
+// and job-owner.mjs needs it to apply the Job Owners rule (ccddh.md):
 // comparing itself against the configured owner's PK silently always
 // came out false without this, since undefined never equals a real PK --
 // every instance, including the real owner, concluded it wasn't the owner
 // and forwarded to itself forever. Caught live: a real infinite loop,
 // each pass a real Stellar trade, before this fix existed. Named JA_PK,
-// not TG_ISSUER_PK (now JA_SK's own derived public key) -- this is just
-// "which account is this", not an assertion about being anyone's real
-// issuer (see the Job Owners round's own naming note).
-if (process.env.JA_SK) process.env.JA_PK = Keypair.fromSecret(process.env.JA_SK).publicKey()
+// not TG_ISSUER_PK -- this is just "which account is this", not an
+// assertion about being anyone's real issuer (see the Job Owners round's
+// own naming note).
+const pk = Keypair.fromSecret(sk).publicKey()
+process.env.JA_PK = pk
 
 //function safeMtlsOptions (pk) {{{1
 /** mtlsOptions() throws (a real fs ENOENT) when mTLS=true but the named
@@ -112,7 +117,7 @@ const actor = { // {{{1
   sk,
   WebSocket,
   // TG_MTLS_PK: optional override for whose cert to present -- this
-  // identity's own TG_AGENT_PK by default, but ja's own agent key is
+  // identity's own JA_PK by default, but ja's own agent key is
   // never CSR'd (no lasting cert to dedupe for a rotating identity, round
   // 38's call on scope), so it has nothing of its own to present. The
   // mTLS check only verifies a cert chains to Cloudflare's CA, not which
@@ -141,23 +146,18 @@ const offer = {
   },
 }
 
-if (!process.env.JA_SK) { // {{{1
-  console.log('[ja] JA_SK not set -- gating skipped (dev/test only)')
-}
-
 const log = line => console.log('[ja] gate', line)
 
 //async function postThisJob () {{{1
 /** Posts this Job's own entry to /jobs once, at startup -- the KoT Jobs
  * list (cnj.md) replacing register.js's own old auto-registration (round
  * "retiring the registry"). Best-effort, same posture safeMtlsOptions()
- * already has: no JA_SK (dev/test), no TG_DESCRIPTION, no cert for this
- * PK, or the POST itself failing (e.g. a stale/wrong cert) all just skip
- * with a logged reason -- a Job not showing up on the catalog page is
- * never a reason to stop selling it. Called once, not from inside the
- * for(;;) loop below: nothing about this entry changes between grants. */
+ * already has: no TG_DESCRIPTION, no cert for this PK, or the POST
+ * itself failing (e.g. a stale/wrong cert) all just skip with a logged
+ * reason -- a Job not showing up on the catalog page is never a reason
+ * to stop selling it. Called once, not from inside the for(;;) loop
+ * below: nothing about this entry changes between grants. */
 async function postThisJob () {
-  if (!process.env.JA_SK) return; // no real identity to post as
   const name = process.env.TG_ASSET_CODE ?? 'TGA'
   const desc = process.env.TG_DESCRIPTION
   if (!desc) { console.log('[ja] TG_DESCRIPTION not set -- skipping /jobs posting'); return; }
@@ -197,21 +197,19 @@ await postThisJob()
 
 console.log('[ja] waiting for a matched request...')
 for (;;) {
-  if (process.env.JA_SK) {
-    console.log('[ja] gate closed, waiting for a grant...')
-    try {
-      await gateGrant(log)
-    } catch (err) {
-      const codes = err?.response?.data?.extras?.result_codes?.operations ?? []
-      if (!codes.includes('op_underfunded')) throw err;
-      await restock()
-      continue; // retry gateGrant() now that there's real inventory again
-    }
-    // Proof of Delivery, redefined (ccddh.md): the Requester pays the
-    // gate asset back unilaterally once the Job is done (see jr/run.js),
-    // not something this Agent builds or sends -- no prefix needed here
-    // any more.
+  console.log('[ja] gate closed, waiting for a grant...')
+  try {
+    await gateGrant(log)
+  } catch (err) {
+    const codes = err?.response?.data?.extras?.result_codes?.operations ?? []
+    if (!codes.includes('op_underfunded')) throw err;
+    await restock()
+    continue; // retry gateGrant() now that there's real inventory again
   }
+  // Proof of Delivery, redefined (ccddh.md): the Requester pays the
+  // gate asset back unilaterally once the Job is done (see jr/run.js),
+  // not something this Agent builds or sends -- no prefix needed here
+  // any more.
   const message = await runJob(actor, offer)
   console.log('[ja]', message)
 }
