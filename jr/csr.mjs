@@ -68,7 +68,7 @@
 //                     on a human looking at something, same reasoning
 //                     TG_GRANT_TIMEOUT_MS's own default has).
 //
-// Usage:
+// Usage: {{{2
 //   node csr.mjs         -- the whole flow in one invocation: generate a
 //                                CSR, buy 1 CSR:<ownerPk> (the gate
 //                                trade), Match under aud:'csr', send the
@@ -99,7 +99,7 @@
 //                                saved as an alias -- find-pk.mjs's own
 //                                header explains why: a multi-word name
 //                                can never safely sit in a Make ${TEST}
-//                                target position, only an alias can.
+//                                target position, only an alias can. }}}2
 
 import { execFile } from 'node:child_process' // {{{1
 import fs from 'node:fs/promises'

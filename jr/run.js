@@ -21,13 +21,9 @@
 //                         its own smName-shaped path is just the fallback
 //                         connect target if discovery finds nothing.
 //   TG_JR_NAME         -- optional, defaults to 'jr'
-//   JI_PK              -- the Job's own real issuer (see gate.js).
-//                         Optional -- if unset, discovered from the
-//                         catalog instead (by TG_ASSET_CODE), which also
-//                         supplies which smName to actually connect to.
-//                         If *that's* also empty (nothing registered for
-//                         that asset code), the gate trade is skipped
-//                         entirely (dev/test only).
+//   TG_ASSET_CODE      -- optional, defaults to 'ECHO'
+//   JI_PK              -- required
+//   JA_PK              -- optional
 //   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
 //                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
@@ -62,7 +58,7 @@ function makeOutbox () {
 }
 
 async function main () { // {{{1
-  const [sk, pk] = (await generate_keypair()).split(' ')
+  const [sk, pk] = (await generate_keypair()).split(' ') // {{{2
 
   // One asset per Job, not a shared 'TGA' (ccddh.md) -- 'ECHO' is this
   // one's own fixed selector. Only a default: an explicit JI_PK
@@ -70,14 +66,16 @@ async function main () { // {{{1
   // registry's own entry.assetCode is what normally provides it instead.
   process.env.TG_ASSET_CODE ??= 'ECHO'
 
-  // The original, smName-bearing URL -- the fallback connect target if
+  // The original, smName-bearing URL -- the fallback connect target if {{{2
   // discovery below finds nothing (today's own "skip gating, still try
   // the connection" behavior -- a bare origin with no smName segment
   // would 500 the WS upgrade instead). Only ever overwritten on an actual
   // catalog hit, never discarded outright.
   let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+  // TODO replace the above with
+  // let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
 
-  if (!process.env.JI_PK) {
+  if (!process.env.JI_PK) { // {{{2
     const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special"
     // scheme, so .origin is meaningful -- scheme+host+port, path dropped.
     const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
@@ -110,7 +108,7 @@ async function main () { // {{{1
     }
   }
 
-  const actor = {
+  const actor = { // {{{2
     app: 'jr',
     iss: { name: process.env.TG_JR_NAME ?? 'jr', pk },
     sk,
@@ -126,12 +124,14 @@ async function main () { // {{{1
     console.log('[jr] JI_PK not set (directly or via the registry) -- gating skipped (dev/test only)')
   }
 
-  const outbox = makeOutbox()
+  const outbox = makeOutbox() // {{{2
   outbox.push('hello from jr')
   outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
+  const label = process.env.TG_ASSET_CODE // {{{2
+  const aud = label.toLowerCase()
   const gen = job(actor, {
-    aud: 'echo', label: 'Echo', outbox,
+    aud, label, outbox,
     // Which specific Agent's offer to match -- the one this Requester's
     // own gate trade just paid (JA_PK, when a reseller's own trade set it
     // differently from JI_PK; otherwise they're the same account), not
@@ -143,33 +143,33 @@ async function main () { // {{{1
   let jobError // set on a daeh 'error' event (e.g. match/relay timeout) -- thrown below
   // instead of just logged, so an unattended run (the nightly BIT) actually
   // exits non-zero on failure rather than silently "succeeding".
-  let step = await gen.next()
+  let step = await gen.next() // {{{2
   while (!step.done) {
     const event = step.value
-    if (event.type === 'open') {
+    if (event.type === 'open') { // {{{3
       console.log('[jr] Connected, waiting to be matched with an Agent...')
-    } else if (event.type === 'matched') {
-      console.log('[jr] Matched -- sending the echo request...')
-    } else if (event.type === 'output') {
+    } else if (event.type === 'matched') { // {{{3
+      console.log(`[jr] Matched -- sending the ${aud} request...`)
+    } else if (event.type === 'output') { // {{{3
       console.log('[jr] sent:', event.line)
-    } else if (event.type === 'message') {
-      console.log('[jr] echo reply:', event.payload.sub)
-    } else if (event.type === 'error') {
+    } else if (event.type === 'message') { // {{{3
+      console.log(`[jr] ${aud} reply:`, event.payload.sub)
+    } else if (event.type === 'error') { // {{{3
       console.error('[jr] job error:', event.error)
       jobError = event.error
-    }
+    } // }}}3
     step = await gen.next()
   }
   console.log('[jr]', step.value.message)
   if (jobError) throw jobError;
 
-  // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to
+  // Proof of Delivery, redefined (ccddh.md): pay the gate asset back to {{{2
   // the Agent now that the Job is done, unilaterally -- no XDR from the
   // Agent needed, just our own keypair and its already-known public key.
   if (requesterKp) {
     const txId = await payBack(requesterKp)
     console.log(`PoD-TXID: ${txId}`) // bare, no [jr] prefix -- meant to be parsed later
-  }
+  } // }}}2
 }
 
 main().catch(e => { // {{{1

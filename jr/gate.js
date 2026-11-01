@@ -96,8 +96,8 @@ async function cancelBuyOffer (kp, asset) {
  * built -- the asset stays clawback-enabled for that, postponed on
  * purpose. Returns the submitted transaction's hash. */
 export async function payBack (kp) {
-  const jaPk = process.env.JA_PK ?? process.env.JI_PK
-  if (!jaPk) throw new Error("JA_PK or JI_PKmust be set");
+  const jaPk = process.env.JA_PK
+  if (!jaPk) throw new Error("JA_PK must be set at this point");
   const asset = new Asset(assetCode(), assetIssuerPk())
   const account = await server.loadAccount(kp.publicKey())
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
@@ -116,15 +116,22 @@ export async function payBack (kp) {
  * TG_GRANT_TIMEOUT_MS (or the grantTimeoutMs argument) is set and the
  * offer hasn't filled within that window, cancels it and rejects instead
  * of waiting forever -- an AbortController drives the timeout, the same
- * pattern daeh's matchTimeoutMs/relayTimeoutMs use. */
+ * pattern daeh's matchTimeoutMs/relayTimeoutMs use.
+ *
+ * Also sets process.env.JA_PK to the trade's own counterparty (the
+ * filled effect's own `seller` field -- confirmed live against real
+ * Horizon data that this names the other side, regardless of which of
+ * the two actually placed the resting offer) -- a caller that only knew
+ * JI_PK going in (the ordinary DEX-driven case: whichever reseller
+ * happens to be cheapest right now fills it, not necessarily JI_PK
+ * itself) now has the real seller's own PK afterward too, for payBack
+ * and for pinning the WS Match (targetPk) to that exact Agent. */
 export async function buyGrant (
   onLog = () => {}, 
   grantTimeoutMs = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS)
                    : undefined
 ) {
-  const jaPk = process.env.JA_PK ?? process.env.JI_PK // {{{2
-  if (!jaPk) throw new Error("JA_PK or JI_PKmust be set");
-  const kp = process.env.TG_JR_SK ? Keypair.fromSecret(process.env.TG_JR_SK) : Keypair.random()
+  const kp = process.env.TG_JR_SK ? Keypair.fromSecret(process.env.TG_JR_SK) : Keypair.random() // {{{2
   const asset = new Asset(assetCode(), assetIssuerPk())
 
   await ensureFunded(kp)
@@ -157,6 +164,7 @@ export async function buyGrant (
         // This account only ever does this one trade -- any 'trade' effect
         // on it is unambiguously this offer filling, no amount check needed.
         if (effect.type !== 'trade') return;
+        process.env.JA_PK = effect.seller
         onLog('grant confirmed -- trade filled')
         finish(resolve, kp);
       },
@@ -166,7 +174,8 @@ export async function buyGrant (
     // above has been observed, live, to silently stop delivering events
     // (the very bug the comment above was already written to guard against,
     // just via a different mechanism -- this covers it regardless of cause).
-    const stopPoll = pollForTrade(kp.publicKey(), since, () => true, () => {
+    const stopPoll = pollForTrade(kp.publicKey(), since, () => true, effect => {
+      process.env.JA_PK = effect.seller
       onLog('grant confirmed -- trade filled [via poll fallback]')
       finish(resolve, kp);
     })
