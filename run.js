@@ -117,14 +117,22 @@ const actor = { // {{{1
   sk,
   WebSocket,
   // TG_MTLS_PK: optional override for whose cert to present -- this
-  // identity's own JA_PK by default, but ja's own agent key is
-  // never CSR'd (no lasting cert to dedupe for a rotating identity, round
-  // 38's call on scope), so it has nothing of its own to present. The
-  // mTLS check only verifies a cert chains to Cloudflare's CA, not which
-  // PK it names, so borrowing another real identity's cert here (e.g.
-  // E's) is a correct, if temporary, stand-in until ja's own agent key
-  // ever gets one issued.
-  wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja', safeMtlsOptions(process.env.TG_MTLS_PK)],
+  // identity's own JA_PK (pk, above) by default, passed explicitly
+  // rather than left to mtls.mjs's own TG_AGENT_PK-based default (gone
+  // now that TG_AGENT_PK is retired -- caught live: toll_gate_csr, which
+  // no longer sets it at all, silently presented no cert whatsoever,
+  // failing every Match with a 30s timeout instead of ever reaching
+  // wsfsm.ts's own real rejection). ja's own agent key is never CSR'd on
+  // its own (no lasting cert to dedupe for a rotating identity, round
+  // 38's call on scope), so for a rotating identity specifically this
+  // still has nothing of its own to present -- the mTLS check only
+  // verifies a cert chains to Cloudflare's CA, not which PK it names, so
+  // borrowing another real identity's cert via an explicit TG_MTLS_PK
+  // (e.g. E's) is a correct, if temporary, stand-in until ja's own agent
+  // key ever gets one issued. For every current caller, though, pk IS a
+  // real, stable, already-certified identity (E, JA2), so this default
+  // already resolves correctly on its own.
+  wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja', safeMtlsOptions(process.env.TG_MTLS_PK ?? pk)],
 }
 
 const aud = process.env.TG_AGENT_AUD ?? 'echo' // {{{1
