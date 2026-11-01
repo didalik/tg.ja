@@ -132,8 +132,14 @@ function readStdin () { // {{{1
  * mainCert() (storing the signed cert later) so both land in the exact
  * same directory for the same identity. Exported so compete.mjs can check
  * whether an identity already has a real cert before deciding whether it
- * needs to get one first. */
+ * needs to get one first. A falsy pk would otherwise silently collapse
+ * this to the whole identity store's own top-level directory instead of
+ * a real PK subdirectory (an empty string interpolates to nothing) --
+ * caught live via ouOf()'s own regex quirk; guarded here too, not just
+ * there, since this is the one place every caller's own pk actually
+ * turns into a path. */
 export function certDirFor (pk) {
+  if (!pk) throw new Error('certDirFor: pk must not be empty');
   return process.env.CSR_CERT_DIR ?? `${process.env.HOME}/.config/.cloudflare-job-fair/${pk}`;
 }
 
@@ -317,7 +323,18 @@ async function ouOf (certPath) {
   const { stdout } = await execFileP('openssl', ['x509', '-noout', '-subject', '-in', certPath])
   const m = stdout.match(/OU\s*=\s*([^,/\n]+)/)
   if (!m) throw new Error('certificate has no OU field');
-  return m[1].trim();
+  const ou = m[1].trim()
+  // [^,/\n]+ still matches an *empty* OU's own lone separating space (e.g.
+  // "OU = , CN = ..."), which .trim() then collapses to '' -- caught live:
+  // storeCert() went on to call certDirFor(''), which silently resolved to
+  // this whole identity store's own *top-level* directory (the empty pk
+  // interpolating to nothing), scattering cert.pem/extras.json/etc. there
+  // instead of under a real PK subdirectory. Same "no OU field" error,
+  // not a different one -- an empty OU is exactly as useless as a missing
+  // one for this function's own purpose (recovering which identity this
+  // certificate is for).
+  if (!ou) throw new Error('certificate has no OU field');
+  return ou;
 }
 
 //export async function storeCert ({ cert, name }) {{{1
