@@ -184,7 +184,7 @@ export async function generateCsr (pk, cn, dir) {
  * versa) can never pass csr-approve.mjs's own verification either way,
  * so there's no point sending just one. */
 export async function requestCsr ({
-  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/jr',
   csr, network, email, invite, paymentTx, matchTimeoutMs, onLog = () => {},
 }) {
   process.env.JI_PK = ownerPk
@@ -247,7 +247,7 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
  * instead of duplicating it. Returns the identity's own pk once its cert
  * is stored. */
 export async function csrAndWait ({
-  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/ja',
+  kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/jr',
   csr, network = 'testnet', email, invite, paymentTx, name, matchTimeoutMs, pollTimeoutMs, onLog = () => {},
 }) {
   const { reply, requesterKp } = await requestCsr({

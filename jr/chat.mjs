@@ -20,16 +20,14 @@
 // quit (Ctrl-D), and payBack() happens once at the end -- pay once, chat
 // freely.
 //
-// Env: same as run.js (JI_PK, TG_WS_URL, TG_ASSET_CODE, TG_JR_SK,
-// TG_JR_NAME, TG_GRANT_TIMEOUT_MS, TG_MATCH_TIMEOUT_MS) -- registry
-// auto-discovery works the same way too.
+// Env: same as run.js (JI_PK required, TG_WS_URL, TG_ASSET_CODE, TG_JR_SK,
+// TG_JR_NAME, TG_GRANT_TIMEOUT_MS, TG_MATCH_TIMEOUT_MS).
 
 import readline from 'node:readline' // {{{1
 import WebSocket from 'ws'
 import { Keypair } from '@stellar/stellar-sdk'
 import { generate_keypair } from '@amissine/daeh/sdk.js'
 import { job } from '@amissine/daeh'
-import { httpize } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
 //function makeOutbox () {{{1
@@ -93,43 +91,10 @@ async function main () { // {{{1
   }
   const sk = process.env.TG_JR_SK
   const pk = Keypair.fromSecret(sk).publicKey()
-  // Fallback connect target if discovery below finds nothing -- kept, not
-  // discarded, since catalog discovery only overwrites it on an actual hit.
-  let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
-  process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
+  const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
+  process.env.TG_ASSET_CODE ??= 'ECHO'
 
-  if (!process.env.JI_PK) {
-    const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
-    const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
-    const res = await fetch(registryUrl)
-    if (res.ok) {
-      const entries = await res.json() // always an array now (possibly empty), never 404
-      if (entries.length > 0) {
-        const entry = entries[0] // server-sorted cheapest-priced first
-        // entry.realIssuerPk is always populated server-side (defaults to
-        // entry.issuerPk itself when this isn't a reseller -- register.js's
-        // own header) -- JI_PK (the real asset to trust/buy) comes from
-        // there; JA_PK (the specific seller this trade actually goes
-        // through) from entry.issuerPk directly. Without JI_PK set
-        // correctly, gate.js falls back to trusting/buying entry.issuerPk's
-        // own self-issued look-alike instead of the real thing a reseller
-        // actually sells (caught live, ja.mjs: discovery found a
-        // reseller's real entry correctly, but the trade never filled --
-        // wrong asset).
-        process.env.JI_PK = entry.realIssuerPk ?? entry.issuerPk
-        process.env.JA_PK = entry.issuerPk
-        process.env.TG_ASSET_CODE = entry.assetCode
-        if (entry.price) process.env.TG_PRICE = entry.price
-        wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
-        console.error('[chat] registry: found', entry)
-      } else {
-        console.error(`[chat] registry: no entry (${registryUrl})`)
-      }
-    } else {
-      console.error(`[chat] registry: lookup failed (${registryUrl} -> ${res.status})`)
-    }
-  }
-  if (!process.env.JI_PK) throw new Error('JI_PK not set, directly or via the catalog -- nobody to chat with');
+  if (!process.env.JI_PK) throw new Error('JI_PK must be set -- nobody to chat with');
 
   const actor = { app: 'jr', iss: { name: process.env.TG_JR_NAME ?? 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
 

@@ -52,13 +52,21 @@
 //                               Fair family's shared client cert on the
 //                               WS connection (see ./mtls.mjs, reused
 //                               from hx/jobs/run.js's own pattern).
+//   TG_ASSET_CODE            -- optional, defaults to 'TGA' (see gate.js) --
+//                               also this Job's own name, posted to /jobs
+//                               once at startup (see postThisJob() below).
+//   TG_DESCRIPTION           -- optional: posted to /jobs alongside
+//                               TG_ASSET_CODE/JA_PK -- skipped entirely if
+//                               unset, since jobs.ts requires a desc.
 
 import { Keypair } from '@stellar/stellar-sdk' // {{{1
 import { spawn } from 'node:child_process'
 import WebSocket from 'ws'
 import { runJob } from '@amissine/daeh'
 import { grant as gateGrant } from './gate.js'
-import { mtlsOptions } from './mtls.mjs'
+import { mtlsAgent, mtlsOptions } from './mtls.mjs'
+import { postJob } from '@amissine/daeh/post.mjs'
+import { httpize } from '@amissine/daeh/util.mjs'
 import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 
 const sk = process.env.TG_AGENT_SK // to sign/verify Match/Relay data {{{1
@@ -139,6 +147,29 @@ if (!process.env.JA_SK) { // {{{1
 
 const log = line => console.log('[ja] gate', line)
 
+//async function postThisJob () {{{1
+/** Posts this Job's own entry to /jobs once, at startup -- the KoT Jobs
+ * list (cnj.md) replacing register.js's own old auto-registration (round
+ * "retiring the registry"). Best-effort, same posture safeMtlsOptions()
+ * already has: no JA_SK (dev/test), no TG_DESCRIPTION, no cert for this
+ * PK, or the POST itself failing (e.g. a stale/wrong cert) all just skip
+ * with a logged reason -- a Job not showing up on the catalog page is
+ * never a reason to stop selling it. Called once, not from inside the
+ * for(;;) loop below: nothing about this entry changes between grants. */
+async function postThisJob () {
+  if (!process.env.JA_SK) return; // no real identity to post as
+  const name = process.env.TG_ASSET_CODE ?? 'TGA'
+  const desc = process.env.TG_DESCRIPTION
+  if (!desc) { console.log('[ja] TG_DESCRIPTION not set -- skipping /jobs posting'); return; }
+  const jobsUrl = new URL('/jobs', httpize(process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'))
+  try {
+    await postJob({ jobsUrl, agent: mtlsAgent(process.env.JA_PK), entry: { name, issuerPk: process.env.JA_PK, desc } })
+    console.log(`[ja] posted ${name}:${process.env.JA_PK} to /jobs`)
+  } catch (err) {
+    console.log(`[ja] /jobs posting skipped: ${err.message}`)
+  }
+}
+
 //async function restock () {{{1
 /** A reseller (JI_PK set -- ccddh.md's RTOJ) only ever holds as much of
  * the real Job asset as it's actually RTOJ'd, unlike the real issuer
@@ -161,6 +192,8 @@ async function restock () {
   console.log(`[ja] out of stock -- restocking 1 ${assetCode} via RTOJ from ${ownerPk}`)
   await buyRtoj({ kp, ownerPk, assetCode, onLog: log })
 }
+
+await postThisJob()
 
 console.log('[ja] waiting for a matched request...')
 for (;;) {

@@ -92,7 +92,11 @@ async function requestPeer () { // {{{1
     const kp = await buyGrant(log)
     log('gate grant confirmed')
 
-    const wsUrl = process.env.SH_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/sh'
+    // Every JR now connects via the same fixed /jr path (ccddh.md's
+    // "retiring the registry" round) -- the old per-app smName (sh) is
+    // moot since the room collapse already put every real WS connection
+    // in one shared DO regardless of path.
+    const wsUrl = process.env.SH_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
     const actor = {
       app: pub, // the SSH public key, not the Stellar one -- see header
       iss: { name: 'P', pk: kp.publicKey() },

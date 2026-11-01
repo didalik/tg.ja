@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 
-// tg/ja/public/jr/run.js -- the Toll Gate's Job Requester: does the gate {{{1
-// trade, waits to be matched, sends one message, and prints back whatever
-// `ja`'s echo job sends in reply -- the whole point is proving the
-// toll-gate wiring (gate -> tg/ws match -> job relay) works
-// end to end against `daeh` directly, not the job itself.
+// tg/ja/public/jr/run.js -- the Toll Gate's generic Job Requester (ccddh.md's {{{1
+// "retiring the registry" round): does the gate trade, waits to be matched,
+// sends one message, and prints back whatever the Agent's own job sends in
+// reply -- the whole point is proving the toll-gate wiring (gate -> tg/ws
+// match -> job relay) works end to end against `daeh` directly, not the
+// job itself. Generic now, not echo-specific: TG_ASSET_CODE picks the Job
+// (aud is just its own lowercase form -- ECHO -> echo, CALC -> calc, ...,
+// the convention every Job name already follows), so this one script
+// drives any Job a caller already knows JI_PK/TG_ASSET_CODE for.
 //
 // Imports daeh as a bare specifier, resolved via node_modules (ccddh.md's
 // "limited trust" round: daeh moved to its own repo, didalik/daeh,
@@ -14,16 +18,26 @@
 // this file's own imports no longer assume a fixed relative depth into a
 // surrounding checkout.
 //
+// Connects to a fixed /jr path now, not one smName per app (ccddh.md's
+// "collapse to one shared WS room" round already made that purely
+// cosmetic server-side; every JA, symmetrically, now connects to a fixed
+// /ja -- see tg/ja/run.js). Finding *who* to trade with no longer needs a
+// catalog either: JI_PK names the Job's own real issuer directly, and
+// Stellar's own DEX picks up whichever account -- the real issuer or any
+// reseller holding real, fungible inventory of that exact asset -- has
+// the best current price, with no discovery step of its own at all.
+//
 // Env:
-//   TG_WS_URL          -- optional, defaults to the qa deploy. Its origin
-//                         (httpized -- see daeh/lib/util.mjs's httpize) is
-//                         used to reach the one shared job catalog below;
-//                         its own smName-shaped path is just the fallback
-//                         connect target if discovery finds nothing.
+//   TG_WS_URL          -- optional, defaults to the qa deploy's own /jr path.
 //   TG_JR_NAME         -- optional, defaults to 'jr'
 //   TG_ASSET_CODE      -- optional, defaults to 'ECHO'
-//   JI_PK              -- required
-//   JA_PK              -- optional
+//   JI_PK              -- required (no gating at all if unset -- dev/test only)
+//   JA_PK              -- optional: pins the WS Match to this specific
+//                         Agent instead of JI_PK -- set this if you already
+//                         know you're buying from a reseller, not the real
+//                         issuer; buyGrant() also sets it itself, from the
+//                         trade's own real counterparty, once the trade
+//                         actually fills (see gate.js).
 //   TG_GRANT_TIMEOUT_MS -- optional: cancel the DEX buy offer and give up if
 //                         it doesn't fill within this long (see gate.js).
 //   TG_MATCH_TIMEOUT_MS -- optional, defaults to 30000: give up (daeh's
@@ -34,7 +48,6 @@
 import WebSocket from 'ws' // {{{1
 import { generate_keypair } from '@amissine/daeh/sdk.js'
 import { job } from '@amissine/daeh'
-import { httpize } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack } from './gate.js'
 
 //function makeOutbox () {{{1
@@ -61,52 +74,11 @@ async function main () { // {{{1
   const [sk, pk] = (await generate_keypair()).split(' ') // {{{2
 
   // One asset per Job, not a shared 'TGA' (ccddh.md) -- 'ECHO' is this
-  // one's own fixed selector. Only a default: an explicit JI_PK
-  // (bypassing the registry lookup below) still needs this, since the
-  // registry's own entry.assetCode is what normally provides it instead.
+  // one's own fixed selector, overridden by an explicit TG_ASSET_CODE
+  // for any other Job.
   process.env.TG_ASSET_CODE ??= 'ECHO'
 
-  // The original, smName-bearing URL -- the fallback connect target if {{{2
-  // discovery below finds nothing (today's own "skip gating, still try
-  // the connection" behavior -- a bare origin with no smName segment
-  // would 500 the WS upgrade instead). Only ever overwritten on an actual
-  // catalog hit, never discarded outright.
-  let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
-  // TODO replace the above with
-  // let wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
-
-  if (!process.env.JI_PK) { // {{{2
-    const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special"
-    // scheme, so .origin is meaningful -- scheme+host+port, path dropped.
-    const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${process.env.TG_ASSET_CODE}`
-    const res = await fetch(registryUrl)
-    if (res.ok) {
-      const entries = await res.json() // always an array now (possibly empty), never 404
-      if (entries.length > 0) {
-        const entry = entries[0] // server-sorted cheapest-priced first
-        // entry.realIssuerPk is always populated server-side (defaults to
-        // entry.issuerPk itself when this isn't a reseller -- register.js's
-        // own header) -- JI_PK (the real asset to trust/buy) comes from
-        // there; JA_PK (the specific seller this trade actually goes
-        // through, which only ever differs from JI_PK for a reseller) from
-        // entry.issuerPk directly. Without JI_PK set correctly, gate.js
-        // falls back to trusting/buying entry.issuerPk's own self-issued
-        // look-alike instead of the real thing a reseller actually sells
-        // (caught live, ja.mjs: discovery found a reseller's real entry
-        // correctly, but the trade never filled -- wrong asset).
-        process.env.JI_PK = entry.realIssuerPk ?? entry.issuerPk
-        process.env.JA_PK = entry.issuerPk
-        process.env.TG_ASSET_CODE = entry.assetCode
-        if (entry.price) process.env.TG_PRICE = entry.price
-        wsUrl = `${origin}/${entry.smName}` // the catalog, not wsUrl's own old path, says where to connect
-        console.log('[jr] registry: found', entry)
-      } else {
-        console.log(`[jr] registry: no entry (${registryUrl})`)
-      }
-    } else {
-      console.log(`[jr] registry: lookup failed (${registryUrl} -> ${res.status})`)
-    }
-  }
+  const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr' // {{{2
 
   const actor = { // {{{2
     app: 'jr',
@@ -119,9 +91,10 @@ async function main () { // {{{1
   let requesterKp
   if (process.env.JI_PK) {
     requesterKp = await buyGrant(line => console.log('[jr] gate:', line))
-    console.log('[jr] gate grant confirmed')
+    const seller = process.env.JA_PK == process.env.JI_PK ? 'issuer' : 'reseller'
+    console.log(`[jr] gate granted by ${seller}`)
   } else {
-    console.log('[jr] JI_PK not set (directly or via the registry) -- gating skipped (dev/test only)')
+    console.log('[jr] JI_PK not set -- gating skipped (dev/test only)')
   }
 
   const outbox = makeOutbox() // {{{2

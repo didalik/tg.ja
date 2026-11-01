@@ -58,7 +58,7 @@
 //                  waits forever for a human to approve or reject
 //   TG_WS_URL   -- optional, defaults to the qa deploy
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -75,7 +75,13 @@ const ownerPk = process.env.OWNER_PK
 if (!ownerPk) throw new Error('OWNER_PK must be set (the real Owner you are reselling)');
 const assetCode = process.env.ASSET_CODE ?? 'ECHO'
 const price = process.env.PRICE ?? '0.5'
-const wsUrl = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'
+// One origin, two fixed paths -- /jr for the CSR-buying step below (this
+// identity acting as a Requester), /ja for the Agent it then becomes
+// (ccddh.md's "retiring the registry" round: every JA/JR now connects via
+// one of these two fixed paths, never a per-app smName).
+const wsOrigin = new URL(process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja').origin
+const jrWsUrl = `${wsOrigin}/jr`
+const jaWsUrl = `${wsOrigin}/ja`
 
 const testnetDir = path.join(process.env.HOME, '.config', '.testnet')
 const cloudflareDir = path.join(process.env.HOME, '.config', '.cloudflare-job-fair')
@@ -132,32 +138,22 @@ if (fs.existsSync(certPath)) {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'sidecar.json'), JSON.stringify({ network: 'testnet', sk }) + '\n')
   await csrAndWait({
-    kp, ownerPk, wsUrl, csr, email, name: whoami,
+    kp, ownerPk, wsUrl: jrWsUrl, csr, email, name: whoami,
     pollTimeoutMs: process.env.CSR_POLL_TIMEOUT_MS ? Number(process.env.CSR_POLL_TIMEOUT_MS) : undefined,
     onLog: line => console.log('[compete] csr', line),
   })
   console.log(`[compete] ${pk} now certified -- RTOJing for its first unit of ${assetCode}`)
   await buyRtoj({ kp, ownerPk, assetCode, onLog: line => console.log('[compete] rtoj', line) })
 }
-console.log(`[compete] now holding real ${assetCode} -- registering and starting the gate`)
+console.log(`[compete] now holding real ${assetCode} -- starting the gate`)
 
-execFileSync('node', ['register.js', 'ja'], {
-  cwd: path.join(__dirname, '..'), // register.js lives at the repo root, not jr/
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    JA_PK: pk,
-    TG_ASSET_CODE: assetCode,
-    TG_PRICE: price,
-    JI_PK: ownerPk,
-    TG_DESCRIPTION: process.env.DESCRIPTION ?? `Resold by ${whoami}`,
-    TG_WS_URL: wsUrl,
-    mTLS: 'true',
-  },
-})
+// No registration step any more (ccddh.md's "retiring the registry"
+// round) -- this identity's own sell offer for assetCode:ownerPk is the
+// exact same fungible asset the real issuer already sells, so Stellar's
+// own DEX picks it up automatically whenever it's cheapest, with no
+// catalog entry needed to be found at all.
 
-// run.js is the long-running foreground process from here on -- spawnSync
-// (not execFileSync) just to keep this file's own intent explicit: this
+// run.js is the long-running foreground process from here on -- this
 // genuinely runs until killed, same as any other Agent process.
 //
 // mTLS=true here now (ccddh.md's "automate join's cert chores" round --
@@ -180,7 +176,7 @@ const result = spawnSync('node', ['../run.js'], {
     TG_ASSET_CODE: assetCode,
     JI_PK: ownerPk,
     TG_PRICE: price,
-    TG_WS_URL: wsUrl,
+    TG_WS_URL: jaWsUrl,
     mTLS: 'true',
   },
 })

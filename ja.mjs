@@ -1,7 +1,7 @@
 import { put, reset, } from './lib/util.mjs' // {{{1
 import { generate_keypair, } from '@amissine/daeh/sdk.js'
 import { job, } from '@amissine/daeh'
-import { httpize, wsize, } from '@amissine/daeh/util.mjs'
+import { wsize, } from '@amissine/daeh/util.mjs'
 import { buyGrant, payBack, } from './jr/gate.js'
 
 // gate.js/stellar.mjs read process.env.* (JI_PK, JA_PK, TG_ASSET_CODE, {{{1
@@ -81,92 +81,34 @@ async function nextMessage (gen) {
 }
 
 async function main () { // {{{1
-  // The whole point: this page's own URL *is* TG_WS_URL, ws-ized -- no env
-  // var, no config file. Served at tg/ja's own /ja (see ../src/index.js),
-  // whose wsurHandler already proxies a WS-upgrade at this same path
-  // through to tg/ws -- so connecting here reaches the real Durable
-  // Object exactly the way Node jr's TG_WS_URL does, just same-origin
-  // instead of direct.
-  // Fallback connect target if discovery below finds nothing -- kept, not
-  // discarded, since catalog discovery only overwrites it on an actual hit.
-  let wsUrl = wsize(location.href)
-  //out(`wsUrl: ${wsUrl}`)
+  // Every JR now connects via the same fixed /jr path (ccddh.md's
+  // "retiring the registry" round) -- the old "this page's own URL IS
+  // the connect URL" trick (reusing whatever path this page happened to
+  // be served at) no longer applies, since every Requester, browser or
+  // Node, now connects the same fixed way regardless of where it's served
+  // from.
+  const wsUrl = wsize(`${location.origin}/jr`)
 
   const [sk, pk] = (await generate_keypair()).split(' ')
-  window.process.env.TG_ASSET_CODE ??= 'ECHO' // must precede the catalog query below -- it's the lookup key
-  const origin = new URL(wsUrl).origin // ws(s): is a WHATWG "special" scheme -- .origin drops the path, keeps scheme+host+port
 
-  // A visitor who picked a *specific seller* on the intro page's own
-  // catalog list arrives here with ?issuerPk=...&smName=... already in
-  // the URL -- a real, deliberate pin, used directly, no discovery at
-  // all (ccddh.md's discovery-ambiguity round). A visitor who picked a
-  // *Job* instead (ccddh.md's reselling round -- intro.mjs's own
-  // renderCatalog groups genuinely-fungible resale entries into one
-  // card) arrives with ?realIssuerPk=...&assetCode=... instead, no
-  // issuerPk -- resolved below to whichever group member is actually
-  // cheapest right now, same DEX-driven pick blind auto-discovery
-  // already uses, just scoped to real substitutes for what was shown
-  // rather than the whole assetCode (which could cross into a different
-  // experience entirely, e.g. Tosh's own LLM-backed chat). Falls through
-  // to blind, whole-assetCode auto-discovery only when *neither* is set
-  // -- a direct, bookmarked /ja link still works unchanged.
+  // intro.mjs's own renderCatalog links here with ?assetCode=&issuerPk=
+  // straight from /jobs (cnj.md's own Job model: a Job *is* just a name
+  // and its real issuer) -- no more registry, no more realIssuerPk/
+  // smName grouping to resolve: Stellar's own DEX already picks up
+  // whichever account -- the real issuer or any reseller holding real,
+  // fungible inventory of that exact asset -- has the best current
+  // price, with no discovery step of its own needed at all.
   const picked = new URLSearchParams(location.search)
-  let aud = 'echo' // {{{2 overwritten below on a hit either way -- 'echo' is only the
-  // fallback for entries that never set TG_AUD (every echo one so far).
-  if (picked.get('issuerPk') && picked.get('smName')) {
-    // The specific seller this visitor picked -- JA_PK. A direct pin to a
-    // reseller's own entry still needs gate.js to know the *real* asset to
-    // trust/buy (JI_PK) is someone else's, not this seller's own
-    // look-alike -- same gap as the discovery branch below, fixed the
-    // same way (caught live: JA3's own real resale, found correctly via
-    // realIssuerPk-scoped discovery, still bought the wrong,
-    // JA3-self-issued "ECHO" because nothing ever set this).
-    window.process.env.JA_PK = picked.get('issuerPk')
-    window.process.env.JI_PK = picked.get('realIssuerPk') ?? picked.get('issuerPk')
-    if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
-    if (picked.get('aud')) aud = picked.get('aud')
-    wsUrl = `${origin}/${picked.get('smName')}`
-    out(`picked: ${picked.get('assetCode') ?? window.process.env.TG_ASSET_CODE} from ${picked.get('issuerPk')}`)
-    if (picked.get('description')) out(picked.get('description'))
-  } else {
-    if (picked.get('assetCode')) window.process.env.TG_ASSET_CODE = picked.get('assetCode')
-    // httpize(origin) + '/catalog/registry' reaches tg/ws's own one shared
-    // job catalog -- directly for Node jr (TG_WS_URL points straight at
-    // tg/ws), and here via tg/ja's own matching /catalog/registry proxy
-    // route (see ../src/index.js/util.mjs's registryHandler), since a plain
-    // fetch() (unlike a WebSocket) is subject to CORS, and this keeps every
-    // request this page makes on its own origin.
-    const registryUrl = `${httpize(origin)}/catalog/registry?assetCode=${window.process.env.TG_ASSET_CODE}`
-    const res = await fetch(registryUrl)
-    if (res.ok) {
-      let entries = await res.json() // always an array now (possibly empty), never 404
-      const realIssuerPk = picked.get('realIssuerPk')
-      if (realIssuerPk) entries = entries.filter(e => (e.realIssuerPk ?? e.issuerPk) === realIssuerPk);
-      if (entries.length > 0) {
-        const entry = entries[0] // server-sorted cheapest-priced first, scoped above if realIssuerPk was given
-        // entry.realIssuerPk is always populated server-side (defaults to
-        // entry.issuerPk itself when this isn't a reseller) -- JI_PK (the
-        // real asset to trust/buy) comes from there; JA_PK (the specific
-        // seller this trade actually goes through) from entry.issuerPk
-        // directly. Without JI_PK set correctly, gate.js falls back to
-        // trusting/buying entry.issuerPk's own self-issued look-alike
-        // instead of the real thing it actually sells (caught live: JA3's
-        // own real resale, found correctly via discovery, still never
-        // filled -- wrong asset entirely).
-        window.process.env.JI_PK = entry.realIssuerPk ?? entry.issuerPk
-        window.process.env.JA_PK = entry.issuerPk
-        window.process.env.TG_ASSET_CODE = entry.assetCode
-        if (entry.price) window.process.env.TG_PRICE = entry.price
-        if (entry.aud) aud = entry.aud
-        wsUrl = `${origin}/${entry.smName}` // the catalog, not this page's own serving smName, says where to connect
-        out(`registry: found ${JSON.stringify(entry)}`)
-      } else {
-        out(`registry: no entry (${registryUrl}${realIssuerPk ? ` filtered to realIssuerPk=${realIssuerPk}` : ''})`)
-      }
-    } else {
-      out(`registry: lookup failed (${registryUrl} -> ${res.status})`)
-    }
+  const assetCode = picked.get('assetCode')
+  const issuerPk = picked.get('issuerPk')
+  if (!assetCode || !issuerPk) {
+    out('Pick a Job from the <a href="/">home page</a> first -- this page needs ?assetCode=&issuerPk= to know what to buy.')
+    return;
   }
+  window.process.env.TG_ASSET_CODE = assetCode
+  window.process.env.JI_PK = issuerPk
+  const aud = assetCode.toLowerCase()
+  if (picked.get('description')) out(picked.get('description'))
 
   const actor = {
     app: 'jr',
@@ -176,13 +118,9 @@ async function main () { // {{{1
     wsArgs: [wsUrl],
   }
 
-  let requesterKp
-  if (window.process.env.JI_PK) {
-    requesterKp = await buyGrant(line => out(`gate: ${line}`))
-    out('gate grant confirmed')
-  } else {
-    out('JI_PK not set (via registry) -- gating skipped (dev/test only)')
-  }
+  const requesterKp = await buyGrant(line => out(`gate: ${line}`))
+  const seller = window.process.env.JA_PK === window.process.env.JI_PK ? 'issuer' : 'reseller'
+  out(`gate granted by ${seller}`)
 
   const outbox = makeOutbox()
   const gen = job(actor, {
