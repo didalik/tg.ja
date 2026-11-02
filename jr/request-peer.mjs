@@ -26,6 +26,16 @@
 //
 // Env:
 //   SH_ISSUER_PK    -- required: E's own Stellar public key
+//   SH_ASSET_CODE   -- optional, defaults to 'PEER' -- must match
+//                      toll_gate_peer's own (gate-p.mjs now requires
+//                      this set; this file is the one caller dedicated
+//                      enough to the peer job specifically to default it
+//                      correctly rather than making every invocation set
+//                      it by hand -- caught live: nothing on this
+//                      Requester side ever set it at all before this,
+//                      silently defaulting to gate-p.mjs's own old 'TGA'
+//                      placeholder, which could never actually match
+//                      the Agent's own 'PEER' sell offer).
 //   SH_WS_URL       -- optional, defaults to the qa deploy
 //   SH_LOCAL_PORT   -- optional, defaults to 8098 -- the local pitch page
 
@@ -41,6 +51,7 @@ import { buyGrant } from './gate-p.mjs'
 
 const execFileP = promisify(execFile)
 const PORT = Number(process.env.SH_LOCAL_PORT ?? 8098)
+process.env.SH_ASSET_CODE ??= 'PEER'
 
 let state = { status: 'idle', log: [] }
 const log = line => { console.log('[sh:P]', line); state.log.push(line) }

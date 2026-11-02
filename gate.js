@@ -34,7 +34,7 @@
 //                        TG_ISSUER_*: this is just "which account is
 //                        this", not an assertion about being anyone's
 //                        real issuer (see run.js's own naming note).
-//   TG_ASSET_CODE     -- optional, defaults to 'TGA'
+//   TG_ASSET_CODE     -- required
 //   JI_PK             -- optional, defaults to this account's own PK
 //                        (today's only case: issuing and selling are the
 //                        same account). A reseller selling real,
@@ -53,7 +53,11 @@ import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } // {{{1
 from '@stellar/stellar-sdk'
 import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server } from '@amissine/daeh/stellar.mjs'
 
-function assetCode () { return process.env.TG_ASSET_CODE ?? 'TGA'; } // {{{1
+function assetCode () { // {{{1
+  const code = process.env.TG_ASSET_CODE
+  if (!code) throw new Error('TG_ASSET_CODE must be set');
+  return code;
+}
 
 function assetIssuerPk (kp) { return process.env.JI_PK ?? kp.publicKey(); } // {{{1
 

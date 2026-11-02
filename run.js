@@ -55,9 +55,9 @@
 //                               Fair family's shared client cert on the
 //                               WS connection (see ./mtls.mjs, reused
 //                               from hx/jobs/run.js's own pattern).
-//   TG_ASSET_CODE            -- optional, defaults to 'TGA' (see gate.js) --
-//                               also this Job's own name, posted to /jobs
-//                               once at startup (see postThisJob() below).
+//   TG_ASSET_CODE            -- required: this Job's own name, posted
+//                               to /jobs once at startup (see
+//                               postThisJob() below).
 //   TG_DESCRIPTION           -- optional: posted to /jobs alongside
 //                               TG_ASSET_CODE/JA_PK -- skipped entirely if
 //                               unset, since jobs.ts requires a desc.
@@ -70,7 +70,6 @@ import { grant as gateGrant } from './gate.js'
 import { mtlsAgent, mtlsOptions } from './mtls.mjs'
 import { postJob } from '@amissine/daeh/post.mjs'
 import { httpize } from '@amissine/daeh/util.mjs'
-import { buyRtoj } from '@amissine/daeh/rtoj.mjs'
 
 const sk = process.env.JA_SK // to sign/verify Match/Relay data, {{{1
 // and to sign this identity's own gate trades (gate.js) -- one keypair,
@@ -79,6 +78,17 @@ const sk = process.env.JA_SK // to sign/verify Match/Relay data, {{{1
 // set both pairs to the same keypair anyway.
 if (!sk) {
   console.error('JA_SK must be set (see generate_keypair)')
+  process.exit(1)
+}
+
+const assetCode = process.env.TG_ASSET_CODE // {{{1
+// No more 'TGA' fallback -- every real caller already sets this
+// explicitly (toll_gate_reset/calc/csr), so the old default only ever
+// masked a caller that forgot to (caught live: an ad-hoc verification
+// run that forgot SH_ASSET_CODE placed a real, meaningless 'TGA' sell
+// offer instead of failing loudly).
+if (!assetCode) {
+  console.error('TG_ASSET_CODE must be set')
   process.exit(1)
 }
 
@@ -166,39 +176,15 @@ const log = line => console.log('[ja] gate', line)
  * to stop selling it. Called once, not from inside the for(;;) loop
  * below: nothing about this entry changes between grants. */
 async function postThisJob () {
-  const name = process.env.TG_ASSET_CODE ?? 'TGA'
   const desc = process.env.TG_DESCRIPTION
   if (!desc) { console.log('[ja] TG_DESCRIPTION not set -- skipping /jobs posting'); return; }
   const jobsUrl = new URL('/jobs', httpize(process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja'))
   try {
-    await postJob({ jobsUrl, agent: mtlsAgent(process.env.JA_PK), entry: { name, issuerPk: process.env.JA_PK, desc } })
-    console.log(`[ja] posted ${name}:${process.env.JA_PK} to /jobs`)
+    await postJob({ jobsUrl, agent: mtlsAgent(process.env.JA_PK), entry: { name: assetCode, issuerPk: process.env.JA_PK, desc } })
+    console.log(`[ja] posted ${assetCode}:${process.env.JA_PK} to /jobs`)
   } catch (err) {
     console.log(`[ja] /jobs posting skipped: ${err.message}`)
   }
-}
-
-//async function restock () {{{1
-/** A reseller (JI_PK set -- ccddh.md's RTOJ) only ever holds as much of
- * the real Job asset as it's actually RTOJ'd, unlike the real issuer
- * (gate.js's own default case), who can always sell more of its own
- * asset regardless of balance. Selling out hits this Stellar-level, not
- * application-level: gate.js's own sell() rejects with a real
- * TransactionFailedError, op_underfunded (caught live: JA3, resold out
- * after its one real unit, crashed here unhandled). Buys exactly one more
- * unit via the same RTOJ mechanism the join Use Case bootstraps into a
- * Job with -- the real Owner's own join-server.mjs already fills every
- * RTOJ offer it sees unconditionally, no special-casing needed for an
- * already-onboarded reseller restocking rather than a brand-new
- * applicant (see rtoj.mjs's own watchForResellers -- fixed this same
- * round so a repeat offer from an already-seen buyer isn't silently
- * dropped forever). */
-async function restock () {
-  const kp = Keypair.fromSecret(process.env.JA_SK)
-  const ownerPk = process.env.JI_PK ?? kp.publicKey()
-  const assetCode = process.env.TG_ASSET_CODE ?? 'TGA'
-  console.log(`[ja] out of stock -- restocking 1 ${assetCode} via RTOJ from ${ownerPk}`)
-  await buyRtoj({ kp, ownerPk, assetCode, onLog: log })
 }
 
 await postThisJob()
@@ -206,14 +192,14 @@ await postThisJob()
 console.log('[ja] waiting for a matched request...')
 for (;;) {
   console.log('[ja] gate closed, waiting for a grant...')
-  try {
-    await gateGrant(log)
-  } catch (err) {
-    const codes = err?.response?.data?.extras?.result_codes?.operations ?? []
-    if (!codes.includes('op_underfunded')) throw err;
-    await restock()
-    continue; // retry gateGrant() now that there's real inventory again
-  }
+  // No more op_underfunded -> restock() fallback here: that only ever
+  // applied to a reseller (JI_PK set), restocking via RTOJ against the
+  // real Owner's own join-server.mjs -- which isn't running (retired
+  // dead weight, same round this restock() call itself was). A reseller
+  // selling out now just throws and crashes, same as any other
+  // unrecoverable error here; Restart=always is the only safety net
+  // left for it, same as it always was for everything else in this loop.
+  await gateGrant(log)
   // Proof of Delivery, redefined (ccddh.md): the Requester pays the
   // gate asset back unilaterally once the Job is done (see jr/run.js),
   // not something this Agent builds or sends -- no prefix needed here

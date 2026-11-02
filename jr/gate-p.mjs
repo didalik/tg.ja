@@ -8,7 +8,7 @@
 //
 // Env:
 //   SH_ISSUER_PK   -- required: E's own Stellar public key
-//   SH_ASSET_CODE  -- optional, defaults to 'TGA' -- must match E's
+//   SH_ASSET_CODE  -- required -- must match E's
 //   SH_PRICE       -- optional, defaults to '1' -- must match E's
 //   SH_GRANT_TIMEOUT_MS -- optional: if the buy offer doesn't fill within
 //                        this many ms, cancel it and give up
@@ -18,7 +18,11 @@ from '@stellar/stellar-sdk'
 import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
 from '@amissine/daeh/stellar.mjs'
 
-function assetCode () { return process.env.SH_ASSET_CODE ?? 'TGA'; } // {{{1
+function assetCode () { // {{{1
+  const code = process.env.SH_ASSET_CODE
+  if (!code) throw new Error('SH_ASSET_CODE must be set');
+  return code;
+}
 
 function price () { return process.env.SH_PRICE ?? '1'; } // {{{1
 
