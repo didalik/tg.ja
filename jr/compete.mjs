@@ -32,7 +32,7 @@
 //
 // Runs no owner-side code at all beyond what csr-approve.mjs itself
 // requires (a human, explicitly, on this one specific box): a new
-// toll_gate_csr.service (run.js with TG_AGENT_AUD=csr) is what actually
+// toll_gate_csr.service (run.js with TG_ASSET_CODE=CSR) is what actually
 // sells the CSR gate trade below, and toll_gate_join.service's own RTOJ
 // watcher (unchanged -- see join-server.mjs's own header) is what fills
 // the separate resale-inventory trade, unconditionally -- this script is

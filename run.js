@@ -136,12 +136,15 @@ const actor = { // {{{1
   wsArgs: [process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/ja', safeMtlsOptions(pk)],
 }
 
-const aud = process.env.TG_AGENT_AUD ?? 'echo' // {{{1
-// Overridable so csr (cnj.md's csr Job) can be run against this same
-// run.js/gate.js, aud:'csr' instead of 'echo' -- not run concurrently
-// with it yet (that needs this Agent to run two gate+job loops at once,
-// a separate problem). Defaults to 'echo', unchanged from before this
-// existed.
+const aud = assetCode.toLowerCase() // {{{1
+// No more separate TG_AGENT_AUD -- every real caller already set it to
+// exactly this (toll_gate_calc's own comment used to spell it out:
+// "aud is just TG_ASSET_CODE's own lowercase form by convention now"),
+// so this derives it instead of making every caller set two env vars
+// in lockstep for one selection (which Job this same run.js/gate.js
+// offers -- cnj.md's csr Job runs this same way with
+// TG_ASSET_CODE=CSR; not run concurrently with echo yet, that needs
+// this Agent to run two gate+job loops at once, a separate problem).
 
 const offer = {
   aud,
