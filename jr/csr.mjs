@@ -15,8 +15,10 @@
 // RTOJ-redesign round). Buying CSR specifically no longer grants any
 // resale inventory at all -- getting a cert and getting something to
 // resell are two separate concerns now (cnj.md's own csr/sell split).
-// compete.mjs's own first-time branch does a separate buyRtoj() call
-// for that, right after this completes.
+// Getting resale inventory has no mechanism of its own at all right now
+// -- RTOJ (compete.mjs, join-server.mjs, daeh/lib/rtoj.mjs) is retired,
+// and the `sell` Job meant to eventually replace it (cnj.md) isn't
+// built yet either.
 //
 // Env (direct CLI use): {{{2
 //   OWNER_PK       -- required to buy the CSR:<ownerPk> Job
@@ -130,9 +132,7 @@ function readStdin () { // {{{1
  * layout mtls.mjs's own CERT_BASE uses, so a cert stored here needs no
  * further wiring to become usable. Shared by main() (CSR generation) and
  * mainCert() (storing the signed cert later) so both land in the exact
- * same directory for the same identity. Exported so compete.mjs can check
- * whether an identity already has a real cert before deciding whether it
- * needs to get one first. A falsy pk would otherwise silently collapse
+ * same directory for the same identity. A falsy pk would otherwise silently collapse
  * this to the whole identity store's own top-level directory instead of
  * a real PK subdirectory (an empty string interpolates to nothing) --
  * caught live via ouOf()'s own regex quirk; guarded here too, not just
@@ -163,8 +163,7 @@ function makeOutbox () {
 //export async function generateCsr (pk, cn, dir) {{{1
 /** Generates a fresh TLS keypair + CSR locally -- OU set to the
  * Requester's own Stellar PK, the same convention E/P/F's own certs use
- * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`.
- * Exported so compete.mjs can generate its own CSR when it needs one. */
+ * (see ccddh.md's Pi4b (F) runbook). The private key never leaves `dir`. */
 export async function generateCsr (pk, cn, dir) {
   await fs.mkdir(dir, { recursive: true })
   const keyPath = path.join(dir, 'cert.key')
@@ -248,9 +247,7 @@ async function pollJoinStatus (id, wsUrl, timeoutMs) {
  * there's no refund of the XLM paid yet (cnj.md's own reimbursement-on-
  * rejection idea is real but not built here; this is a later, separate
  * piece). On approval, pays the CSR unit back (PoD, same as any other
- * Job) and stores the cert. Extracted from main() so compete.mjs can
- * reuse exactly this sequence for a first-time visitor with no cert yet,
- * instead of duplicating it. Returns the identity's own pk once its cert
+ * Job) and stores the cert. Returns the identity's own pk once its cert
  * is stored. */
 export async function csrAndWait ({
   kp, ownerPk = process.env.OWNER_PK, wsUrl = 'wss://qa.ws.tg.kloudoftrust.org/jr',

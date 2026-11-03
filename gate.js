@@ -5,8 +5,8 @@
 // config machinery needed, just the underlying Stellar operations.
 //
 // Promoted here from tg/ja/gate.js (ccddh.md's "publish daeh, promote the
-// Agent-offering flow" round, same move rtoj.mjs/find-pk.mjs already made
-// into daeh): a standalone clone of this repo alone never had this file at
+// Agent-offering flow" round, same move stellar.mjs/find-pk.mjs already
+// made into daeh): a standalone clone of this repo alone never had this file at
 // all, so there was no way to actually *become* a competing Agent, only to
 // *request* a Job (jr/) -- only daeh's own import below needed to change
 // (bare specifier, resolved via node_modules now that daeh is npm-published),

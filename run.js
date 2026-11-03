@@ -188,8 +188,9 @@ for (;;) {
   console.log('[ja] gate closed, waiting for a grant...')
   // No more op_underfunded -> restock() fallback here: that only ever
   // applied to a reseller (JI_PK set), restocking via RTOJ against the
-  // real Owner's own join-server.mjs -- which isn't running (retired
-  // dead weight, same round this restock() call itself was). A reseller
+  // real Owner's own join-server.mjs, since retired along with the rest
+  // of RTOJ (join-server.mjs/compete.mjs/daeh/lib/rtoj.mjs all removed,
+  // same round this restock() call itself was retired in). A reseller
   // selling out now just throws and crashes, same as any other
   // unrecoverable error here; Restart=always is the only safety net
   // left for it, same as it always was for everything else in this loop.
