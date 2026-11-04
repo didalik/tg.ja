@@ -148,7 +148,7 @@ const aud = assetCode.toLowerCase() // {{{1
 
 const offer = {
   aud,
-  label: aud === 'csr' ? 'Csr' : aud === 'calc' ? 'Calc' : 'Echo',
+  label: aud === 'csr' ? 'Csr' : aud === 'calc' ? 'Calc' : aud === 'sell' ? 'Sell' : 'Echo',
   spawn,
   indataEOD: true, // jr signals 'context.job.stdin.end()' once it's sent its message
   matchTimeoutMs: Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000),

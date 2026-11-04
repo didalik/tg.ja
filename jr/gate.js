@@ -37,7 +37,11 @@ function assetIssuerPk () { // {{{1
 
 function price () { return process.env.TG_PRICE ?? '1'; } // {{{1
 
-async function trust (kp, asset) { // {{{1
+export async function trust (kp, asset) { // {{{1
+  // Exported for jr/sell.mjs's own use: establishing trust to the Job
+  // asset being resold (a different asset than whatever this gate trade
+  // itself is paying the toll in) -- same operation, just needed from
+  // outside buyGrant() too now.
   const account = await server.loadAccount(kp.publicKey())
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
     .addOperation(Operation.changeTrust({ asset }))
