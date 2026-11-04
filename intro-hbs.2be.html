@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <title>The KoT Jobs</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+<div id='div1'>
+    <h3>The KoT Jobs: Matched on Cloudflare, Gated and Settled on Stellar</h3>
+    <p>
+The Kloud of Trust (KoT) matches Job Requests with Job Agents on Cloudflare, and settles the deal
+between them on Stellar -- no platform in the middle taking a cut or holding the keys. What's
+running below isn't a mockup: two genuinely independent machines, each selling access to a real
+Job, trade and get paid entirely on-chain, without ever needing to see each other directly.
+    </p>
+    <p>
+<b>Known issue:</b> Chrome on Android currently fails to open the WebSocket connection below --
+the gate trade fills fine, then the session silently fails to match. Firefox (or any desktop
+browser) works fine -- use that if you're on Android, for now.
+    </p>
+<p>
+A Job Agent issues its own small Stellar asset and sells one unit of it at a fixed price, like a
+toll booth selling passage. The trade that buys it <i>is</i> the receipt: a public, timestamped
+<b>Proof of Purchase</b> (PoP), free because the <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a> produces it as a side
+effect of the trade itself -- which also queues multiple Requesters one at a time. The Agent needs
+no public IP: a laptop behind a home router, even an Android phone running
+<a href='https://termux.dev/en/' target='_blank'>Termux</a>, stays reachable 24/7, since it only
+ever makes outbound connections.
+</p>
+<p>
+Paying the toll matches you with the Agent over a WebSocket, relayed through a single Cloudflare
+Durable Object's <a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets' target='_blank'>Hibernation API</a> -- the whole Job runs without the Agent paying for idle
+compute between messages. Once it's done, the Requester pays the same asset straight back: an
+ordinary, unilateral Stellar payment that <i>is</i> <b>Proof of Delivery</b> (PoD). Two
+transactions, PoP and PoD, bookend every Job -- no escrow, no dispute, nobody in the middle.
+</p>
+<p>
+The goal: wrap Cloudflare-based Job matching with Stellar-based cryptonomics, so anybody can offer
+a Job and get paid when it runs. This demo is the entry point -- <i>request</i> a Job (plain echo,
+below), <i>join</i> as a Job Agent, <i>implement and offer</i> your own Job, <i>get paid</i> once
+it's requested and run. If that's interesting to you, as a coder or a tester, I'd love to have you
+join us.
+</p><p>
+Cheers,
+    </p><p>
+Дід Alik, aka Alec Missine, with Claude<br/>
+didalik.aim@gmail.com
+    </p>
+<h4>Join the QA process</h4>
+<p>
+This demo doubles as the entry point to KoT's own QA process -- the path that gets the
+cryptonomics ready for PROD. The Job that actually lets you join is <code>csr</code>: pay the
+toll, and get back a real Cloudflare-issued mTLS certificate --
+your credential to run your own Job Agent and start offering Jobs of your own.
+</p>
+<h4>Available Jobs right now</h4>
+<p>
+The <code>echo</code> is a basic Job example you <i>request</i> on the KoT.
+The <code>calc</code> is another trivial example you can <i>request</i> right now, and it will
+be used later on in the demo.
+The <code>csr</code> Job is listed too -- it's the one that gets you a cert and lets you join --
+but it's still Work In Progress from a browser; try the others right here.
+</p>
+<p id='content1'>
+</p>
+</div>
+  </body>
+  <script type="text/javascript">

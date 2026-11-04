@@ -12,11 +12,14 @@ reset({ content: document.getElementById('content1'), })
 // just fail cleanly -- csr still runs (and pays for) a real gate trade
 // first, since that part genuinely is generic, then the chat text sent
 // afterward fails CSR verification with nothing to show for it (caught
-// live: a real visitor polluted the Stellar side twice this way). Hidden
-// from the list until/unless they get their own dedicated browser flow --
-// still real, buyable Jobs for anyone who already knows to use the
-// Node-side jr/csr.mjs or jr/request-peer.mjs instead.
-const BROWSER_UNSUPPORTED = new Set(['CSR', 'PEER'])
+// live: a real visitor polluted the Stellar side twice this way). csr is
+// listed anyway now -- ja.mjs's own main() shows a Work In Progress
+// message and returns before buyGrant() ever runs, so no trade gets
+// placed; still a real, buyable Job for anyone who already knows to use
+// the Node-side jr/csr.mjs instead. peer stays hidden until it gets the
+// same treatment (or its own dedicated flow) -- still usable via
+// jr/request-peer.mjs.
+const BROWSER_UNSUPPORTED = new Set(['PEER'])
 
 //async function renderCatalog () {{{1
 /** Fetches the KoT Jobs list (cnj.md -- tg/ws/src/jobs.ts, which replaced

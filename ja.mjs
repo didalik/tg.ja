@@ -105,6 +105,15 @@ async function main () { // {{{1
     out('Pick a Job from the <a href="/">home page</a> first -- this page needs ?assetCode=&issuerPk= to know what to buy.')
     return;
   }
+  // intro.mjs's own BROWSER_UNSUPPORTED comment: csr is listed now, but
+  // this generic chat flow can't actually drive it (it needs a real
+  // {csr, network, email} payload, not a typed line) -- guarded here,
+  // before buyGrant() below places any real trade, rather than hiding it
+  // from the catalog outright.
+  if (assetCode === 'CSR') {
+    out('csr is Work In Progress -- not requestable from the browser yet. Use the Node-side jr/csr.mjs for now.')
+    return;
+  }
   window.process.env.TG_ASSET_CODE = assetCode
   window.process.env.JI_PK = issuerPk
   const aud = assetCode.toLowerCase()
