@@ -18,8 +18,14 @@ reset({ content: document.getElementById('content1'), })
 // placed; still a real, buyable Job for anyone who already knows to use
 // the Node-side jr/csr.mjs instead. peer stays hidden until it gets the
 // same treatment (or its own dedicated flow) -- still usable via
-// jr/request-peer.mjs.
-const BROWSER_UNSUPPORTED = new Set(['PEER'])
+// jr/request-peer.mjs. sell joins it here too -- its own
+// {assetCode, requesterPk} structured payload (tg/ja/jobs/sell/sell.mjs)
+// is exactly this same mismatch, caught before it ever reached a real
+// visitor this time: run.js's own postThisJob() posts every offered Job
+// to /jobs regardless, so toll_gate_sell.service showing up here was
+// never actually guarded against until now. Still usable via
+// jr/sell.mjs.
+const BROWSER_UNSUPPORTED = new Set(['PEER', 'SELL'])
 
 //async function renderCatalog () {{{1
 /** Fetches the KoT Jobs list (cnj.md -- tg/ws/src/jobs.ts, which replaced
