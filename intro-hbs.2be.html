@@ -22,10 +22,10 @@ the gate trade fills fine, then the session silently fails to match. Firefox (or
 browser) works fine -- use that if you're on Android, for now.
     </p>
 <p>
-A Job Agent issues its own small Stellar asset and sells one unit of it at a fixed price, like a
+A Job Agent issues its own Stellar asset and sells one unit of it at a fixed price, like a
 toll booth selling passage. The trade that buys it <i>is</i> the receipt: a public, timestamped
 <b>Proof of Purchase</b> (PoP), free because the <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a> produces it as a side
-effect of the trade itself -- which also queues multiple Requesters one at a time. The Agent needs
+effect of the trade itself -- which also queues multiple Job Requests one at a time. The Agent needs
 no public IP: a laptop behind a home router, even an Android phone running
 <a href='https://termux.dev/en/' target='_blank'>Termux</a>, stays reachable 24/7, since it only
 ever makes outbound connections.
@@ -38,10 +38,10 @@ ordinary, unilateral Stellar payment that <i>is</i> <b>Proof of Delivery</b> (Po
 transactions, PoP and PoD, bookend every Job -- no escrow, no dispute, nobody in the middle.
 </p>
 <p>
-The goal: wrap Cloudflare-based Job matching with Stellar-based cryptonomics, so anybody can offer
+The goal: <b>wrap Cloudflare-matched Jobs with Stellar cryptonomics</b>, so anybody can offer
 a Job and get paid when it runs. This demo is the entry point -- <i>request</i> a Job (plain echo,
-below), <i>join</i> as a Job Agent, <i>implement and offer</i> your own Job, <i>get paid</i> once
-it's requested and run. If that's interesting to you, as a coder or a tester, I'd love to have you
+below) to start with, <i>join</i> as a Job Agent, <i>implement and offer</i> your own Job, <i>get paid</i> once
+it's requested and run. If that's interesting to you, I'd love to have you
 join us.
 </p><p>
 Cheers,
@@ -59,7 +59,7 @@ your credential to run your own Job Agent and start offering Jobs of your own.
 <h4>Available Jobs right now</h4>
 <p>
 The <code>echo</code> is a basic Job example you <i>request</i> on the KoT.
-The <code>calc</code> is another trivial example you can <i>request</i> right now, and it will
+The <code>calc</code> is another trivial example you can <i>request</i> right now; it will also
 be used later on in the demo.
 The <code>csr</code> Job is listed too -- it's the one that gets you a cert and lets you join --
 but it's still Work In Progress from a browser; try the others right here.
