@@ -160,12 +160,22 @@ export async function sellAndWait ({
   await trust(kp, asset)
   onLog(`trusting ${assetCode}:${issuerPk}`)
 
+  // Captured *before* requestSell(), not after: a human-reviewed
+  // approval always lands long after this call returns, so the ordering
+  // never mattered before -- but a DEMO_MODE JI (jobs/sell/sell.mjs's
+  // own header) pays out *inside* the same spawned handler, before it
+  // exits, which is before requestSell()'s own job() generator finishes
+  // draining, which is before this call would otherwise run. Capturing
+  // the cursor after the request in that case put it *past* the
+  // payment, so the poll below could never find it (caught live: a real
+  // payment landed, visible via a direct Horizon query, but this
+  // reported "still pending" every time).
+  const since = await effectsCursorNow(kp.publicKey())
   const reply = await requestSell({ kp, jiPk, assetCode, wsUrl, matchTimeoutMs, onLog })
   onLog(`Agent reply: ${JSON.stringify(reply)}`)
   if (reply.status !== 'queued') throw new Error(`sell job didn't queue this: ${JSON.stringify(reply)}`);
 
   onLog(`queued as ${reply.id} -- waiting for ${jiPk} to approve or reject...`)
-  const since = await effectsCursorNow(kp.publicKey())
   const matches = effect => effect.type === 'account_credited' &&
     effect.asset_code === assetCode && effect.asset_issuer === issuerPk
 
