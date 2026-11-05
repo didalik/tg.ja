@@ -25,7 +25,12 @@ reset({ content: document.getElementById('content1'), })
 // to /jobs regardless, so toll_gate_sell.service showing up here was
 // never actually guarded against until now. Still usable via
 // jr/sell.mjs.
-const BROWSER_UNSUPPORTED = new Set(['PEER', 'SELL'])
+// buyInvite joins them pre-emptively this time (dqad.md's step 5,
+// tg/ja/jobs/buyinvite/buyinvite.mjs): same {applicantPk, expiry}
+// structured-payload mismatch, caught before deploy rather than after,
+// this time -- both Owner and JA2 will post their own buyInvite entry
+// to /jobs the moment their own services start.
+const BROWSER_UNSUPPORTED = new Set(['PEER', 'SELL', 'buyInvite'])
 
 //async function renderCatalog () {{{1
 /** Fetches the KoT Jobs list (cnj.md -- tg/ws/src/jobs.ts, which replaced
