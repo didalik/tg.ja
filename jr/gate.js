@@ -6,6 +6,14 @@
 // timing with the Agent at all: place the order and wait, even if the
 // Agent's sell isn't live yet.
 //
+// trust()/buy()/cancelBuyOffer()/payBack() submit through
+// ../broker-client.mjs now, not server.submitTransaction() directly --
+// see tg/sh/broker.mjs's own header for why (sequence-number races
+// between concurrent callers sharing one account -- the demo's own
+// transient identity runs this gate trade *and* offers its own echo via
+// tg/sh's run.js at the same time). The read in cancelBuyOffer() stays
+// direct -- no race risk on a read.
+//
 // Env:
 //   JI_PK             -- required: the Job Issuer's own Stellar public key
 //   JA_PK             -- optional, defaults to JI_PK: the Agent's own Stellar
@@ -20,10 +28,9 @@
 //                        give up -- unset (the default) waits forever,
 //                        same as db's original tm.js always has.
 
-import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } // {{{1
-from '@stellar/stellar-sdk'
-import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
-from '@amissine/daeh/stellar.mjs'
+import { Asset, Keypair, Operation } from '@stellar/stellar-sdk' // {{{1
+import { effectsCursorNow, ensureFunded, pollForTrade, server } from '@amissine/daeh/stellar.mjs'
+import { submit } from '../broker-client.mjs'
 
 function assetCode () { // {{{1
   if (!process.env.TG_ASSET_CODE) throw new Error('TG_ASSET_CODE must be set')
@@ -42,23 +49,16 @@ export async function trust (kp, asset) { // {{{1
   // asset being resold (a different asset than whatever this gate trade
   // itself is paying the toll in) -- same operation, just needed from
   // outside buyGrant() too now.
-  const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.changeTrust({ asset }))
-    .setTimeout(60).build()
-  tx.sign(kp)
-  return server.submitTransaction(tx);
+  return submit({ secretKey: kp.secret(), operations: [Operation.changeTrust({ asset })] });
 }
 
 async function buy (kp, asset) { // {{{1
-  const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.manageBuyOffer({
+  return submit({
+    secretKey: kp.secret(),
+    operations: [Operation.manageBuyOffer({
       selling: Asset.native(), buying: asset, buyAmount: '1', price: price(), offerId: '0',
-    }))
-    .setTimeout(60).build()
-  tx.sign(kp)
-  return server.submitTransaction(tx);
+    })],
+  });
 }
 
 //async function cancelBuyOffer (kp, asset) {{{1
@@ -75,16 +75,10 @@ async function cancelBuyOffer (kp, asset) {
     o.buying.asset_code === asset.code && o.buying.asset_issuer === asset.issuer)
   if (mine.length === 0) return; // already filled (or never actually placed) by now
 
-  const account = await server.loadAccount(kp.publicKey())
-  const builder = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-  for (const offer of mine) {
-    builder.addOperation(Operation.manageBuyOffer({
-      selling: Asset.native(), buying: asset, buyAmount: '0', price: offer.price, offerId: offer.id,
-    }))
-  }
-  const tx = builder.setTimeout(60).build()
-  tx.sign(kp)
-  await server.submitTransaction(tx)
+  const operations = mine.map(offer => Operation.manageBuyOffer({
+    selling: Asset.native(), buying: asset, buyAmount: '0', price: offer.price, offerId: offer.id,
+  }))
+  await submit({ secretKey: kp.secret(), operations });
 }
 
 //export async function payBack (kp) {{{1
@@ -103,12 +97,10 @@ export async function payBack (kp) {
   const jaPk = process.env.JA_PK
   if (!jaPk) throw new Error("JA_PK must be set at this point");
   const asset = new Asset(assetCode(), assetIssuerPk())
-  const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.payment({ destination: jaPk, asset, amount: '1' }))
-    .setTimeout(60).build()
-  tx.sign(kp)
-  const result = await server.submitTransaction(tx)
+  const result = await submit({
+    secretKey: kp.secret(),
+    operations: [Operation.payment({ destination: jaPk, asset, amount: '1' })],
+  })
   return result.hash;
 }
 

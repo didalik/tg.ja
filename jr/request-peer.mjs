@@ -5,10 +5,11 @@
 // browser, and on request, buys access to E's 'peer' job (tg/sh/gate.js,
 // still the Agent's own private infrastructure -- only the Requester side
 // moved here), waits to be matched and granted a jailed SSH account,
-// retrieves tg/sh/stage/'s content out of it, confirms retrieval back to
-// E, and verifies the content locally. Lives under tg/ja/public, not
-// tg/sh, because tg/ja/public is meant to eventually become a public
-// repo real end users run (ccddh.md), and they'll never have tg/sh
+// retrieves the staged export of E's whole tg/sh directory out of it,
+// confirms retrieval back to E, and verifies the content locally. Lives
+// under tg/ja/public, not tg/sh, because tg/ja/public is meant to
+// eventually become a public repo real end users run (ccddh.md), and
+// they'll never have tg/sh
 // available to them -- same reasoning jr/Makefile's own `peer` target is
 // here rather than there. Kept separate from tg/sh/p.mjs (BIT 1-3's
 // SSH-port-forwarding peering experiment) -- a different mechanism

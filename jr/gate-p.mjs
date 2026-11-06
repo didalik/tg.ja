@@ -6,6 +6,11 @@
 // fills. Adapted from ./gate.js's own buyGrant -- simplified, no PoD (see
 // tg/sh/gate.js's own header for why).
 //
+// trust()/buy()/cancelBuyOffer() submit through ../broker-client.mjs now,
+// not server.submitTransaction() directly -- see tg/sh/broker.mjs's own
+// header for why (sequence-number races between concurrent callers
+// sharing one account).
+//
 // Env:
 //   SH_ISSUER_PK   -- required: E's own Stellar public key
 //   SH_ASSET_CODE  -- required -- must match E's
@@ -13,10 +18,9 @@
 //   SH_GRANT_TIMEOUT_MS -- optional: if the buy offer doesn't fill within
 //                        this many ms, cancel it and give up
 
-import { Asset, BASE_FEE, Keypair, Operation, TransactionBuilder } // {{{1
-from '@stellar/stellar-sdk'
-import { effectsCursorNow, ensureFunded, networkPassphrase, pollForTrade, server }
-from '@amissine/daeh/stellar.mjs'
+import { Asset, Keypair, Operation } from '@stellar/stellar-sdk' // {{{1
+import { effectsCursorNow, ensureFunded, pollForTrade, server } from '@amissine/daeh/stellar.mjs'
+import { submit } from '../broker-client.mjs'
 
 function assetCode () { // {{{1
   const code = process.env.SH_ASSET_CODE
@@ -27,23 +31,16 @@ function assetCode () { // {{{1
 function price () { return process.env.SH_PRICE ?? '1'; } // {{{1
 
 async function trust (kp, asset) { // {{{1
-  const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.changeTrust({ asset }))
-    .setTimeout(60).build()
-  tx.sign(kp)
-  return server.submitTransaction(tx);
+  return submit({ secretKey: kp.secret(), operations: [Operation.changeTrust({ asset })] });
 }
 
 async function buy (kp, asset) { // {{{1
-  const account = await server.loadAccount(kp.publicKey())
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(Operation.manageBuyOffer({
+  return submit({
+    secretKey: kp.secret(),
+    operations: [Operation.manageBuyOffer({
       selling: Asset.native(), buying: asset, buyAmount: '1', price: price(), offerId: '0',
-    }))
-    .setTimeout(60).build()
-  tx.sign(kp)
-  return server.submitTransaction(tx);
+    })],
+  });
 }
 
 async function cancelBuyOffer (kp, asset) { // {{{1
@@ -52,16 +49,10 @@ async function cancelBuyOffer (kp, asset) { // {{{1
     o.buying.asset_code === asset.code && o.buying.asset_issuer === asset.issuer)
   if (mine.length === 0) return;
 
-  const account = await server.loadAccount(kp.publicKey())
-  const builder = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-  for (const offer of mine) {
-    builder.addOperation(Operation.manageBuyOffer({
-      selling: Asset.native(), buying: asset, buyAmount: '0', price: offer.price, offerId: offer.id,
-    }))
-  }
-  const tx = builder.setTimeout(60).build()
-  tx.sign(kp)
-  await server.submitTransaction(tx)
+  const operations = mine.map(offer => Operation.manageBuyOffer({
+    selling: Asset.native(), buying: asset, buyAmount: '0', price: offer.price, offerId: offer.id,
+  }))
+  await submit({ secretKey: kp.secret(), operations });
 }
 
 //export async function buyGrant (onLog, grantTimeoutMs) {{{1

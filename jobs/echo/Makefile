@@ -9,24 +9,16 @@
 # stays behind, still the trivial `cat` pass-through Дід Alik's/JA2's
 # own production echo Agents actually run.
 #
-# DEMO_ECHO=true selects ./demo-echo.mjs instead of plain `cat` -- a
-# deterministic (no LLM) stand-in that still pays JA2's real calc Job
-# for anything that looks like bare arithmetic, for a device that can't
-# run a local model at all (see that file's own header). Unset (the
-# default), this stays exactly the trivial pass-through it always was
-# -- the whole point of `ja`/`jr` is proving the toll-gate wiring
-# (gate -> match -> grant -> relayTimeoutMs) works end to end, not the
-# job itself, and DEMO_ECHO=true is the one deliberate exception to that.
-
-SHELL := /bin/bash
-
-.ONESHELL:
+# Plain `cat` again, unconditionally -- this briefly had a DEMO_ECHO=true
+# branch selecting a deterministic (no LLM) stand-in that paid JA2's real
+# calc Job for bare arithmetic, but that moved to tg/sh/jobs/echo/echo.mjs
+# once tg/sh (not this standalone clone) became what the demo snapshot
+# actually ships (and what tg/sh/broker.mjs's own queue covers). The
+# whole point of `ja`/`jr` is proving the toll-gate wiring (gate -> match
+# -> grant -> relay) works end to end, not the job itself -- this file
+# goes back to being exactly that.
 
 .PHONY: job # {{{1
 job:
 	@echo $@ started on $$(date) >&2
-	if [ "$$DEMO_ECHO" = 'true' ]; then
-	  exec node demo-echo.mjs
-	else
-	  exec cat
-	fi
+	@exec cat

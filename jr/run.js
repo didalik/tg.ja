@@ -103,7 +103,9 @@ async function main () { // {{{1
   // needed by callers that care what the Job actually does with the
   // message, not just that the round trip completes (e.g. tg/bit/
   // Makefile's own demo-echo, which sends a real arithmetic expression
-  // to prove demo-echo.mjs's own calc-calling path, not just any line).
+  // to prove tg/sh/jobs/echo/echo.mjs's own calc-calling path, not just
+  // any line -- this requester is agnostic to which codebase the Agent
+  // it's buying from runs).
   outbox.push(process.env.TG_JR_MESSAGE ?? 'hello from jr')
   outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
