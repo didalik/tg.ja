@@ -31,6 +31,7 @@
 //   TG_WS_URL          -- optional, defaults to the qa deploy's own /jr path.
 //   TG_JR_NAME         -- optional, defaults to 'jr'
 //   TG_ASSET_CODE      -- optional, defaults to 'ECHO'
+//   TG_JR_MESSAGE      -- optional, defaults to 'hello from jr'
 //   JI_PK              -- required (no gating at all if unset -- dev/test only)
 //   JA_PK              -- optional: pins the WS Match to this specific
 //                         Agent instead of JI_PK -- set this if you already
@@ -98,7 +99,12 @@ async function main () { // {{{1
   }
 
   const outbox = makeOutbox() // {{{2
-  outbox.push('hello from jr')
+  // TG_JR_MESSAGE: optional override, defaults to the old fixed line --
+  // needed by callers that care what the Job actually does with the
+  // message, not just that the round trip completes (e.g. tg/bit/
+  // Makefile's own demo-echo, which sends a real arithmetic expression
+  // to prove demo-echo.mjs's own calc-calling path, not just any line).
+  outbox.push(process.env.TG_JR_MESSAGE ?? 'hello from jr')
   outbox.push('context.job.stdin.end()') // sentinel -- see daeh/lib/job.ts's indataEOD handling
 
   const label = process.env.TG_ASSET_CODE // {{{2
