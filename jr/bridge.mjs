@@ -240,6 +240,15 @@ async function runJoinFlow () {
       kp, jiPk: ownerPk, issuerPk: ownerPk, assetCode: 'ECHO',
       wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: log,
     })
+    // sellAndWait() -> sell.mjs's own requestSell() sets process.env.JI_PK =
+    // jiPk as a side effect and never unsets it (correct for its own
+    // original design: always a fresh CLI process). Left sitting there,
+    // it leaks into spawnOwnEcho()'s child below via its own {...process.env}
+    // spread, overriding that offer's deliberately-unset JI_PK and making
+    // it resell the Owner's ECHO too instead of self-issuing its own --
+    // caught live: both of this identity's own offers showed up selling
+    // ECHO:<Owner's PK> on Horizon, not two distinct assets.
+    delete process.env.JI_PK
     const price = await halfOfOwnersPrice(ownerPk, 'ECHO')
     log(`got real echo inventory -- reselling at ${price} XLM`)
 
