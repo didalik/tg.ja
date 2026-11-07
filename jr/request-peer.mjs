@@ -25,6 +25,12 @@
 // Requester already does -- grant.sh reads it back out via
 // attachment.match?.sub for the account's authorized_keys.
 //
+// requestPeer() is exported so tg/ja/public/jr/bridge.mjs can call it
+// directly (dqad.md's step 8), same "exported reusable function + thin
+// CLI/server wrapper" shape buyinvite.mjs/csr.mjs/sell.mjs already have
+// -- requestPeerBit() below (this file's own existing BIT path) is now
+// just that thin wrapper.
+//
 // Env:
 //   SH_ISSUER_PK    -- required: E's own Stellar public key
 //   SH_ASSET_CODE   -- optional, defaults to 'PEER' -- must match
@@ -96,80 +102,118 @@ async function generateSshKeypair () { // {{{1
   return { keyPath, pub };
 }
 
-async function requestPeer () { // {{{1
+//export async function requestPeer ({ kp, issuerPk, wsUrl, matchTimeoutMs, destDir, onLog }) {{{1
+/** The peer Job's own Requester-side flow, extracted so tg/ja/public/
+ * jr/bridge.mjs can call it directly (dqad.md's step 8) instead of
+ * running this file as a separate process a second way -- the server
+ * below (main()) is now just a thin wrapper around this, behavior
+ * otherwise unchanged for the existing `peer` BIT. Buys 1 unit of E's
+ * own PEER asset, Matches under aud:'peer', retrieves the granted
+ * jail's own staged tg/sh export over tar+ssh into destDir, confirms
+ * retrieval back to E. Returns destDir once the retrieved content is
+ * verified to actually be there (checked via its own README.md, same
+ * check the BIT's own PASS/FAIL already made). */
+export async function requestPeer ({
+  kp, issuerPk = process.env.SH_ISSUER_PK, wsUrl = process.env.SH_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr',
+  matchTimeoutMs = Number(process.env.SH_MATCH_TIMEOUT_MS ?? 30_000), destDir, onLog = () => {},
+}) {
+  if (!issuerPk) throw new Error('SH_ISSUER_PK must be set (Es own Stellar public key)');
+  // gate-p.mjs's own buyGrant() reads SH_ISSUER_PK directly, not as a
+  // param -- the issuerPk param above only fed targetPk below before
+  // this line existed, so this call always used to fail unless a
+  // caller had *also* separately exported SH_ISSUER_PK itself (true for
+  // the BIT's own env-var-driven invocation, never true for a caller
+  // passing issuerPk as an explicit param instead -- caught live, the
+  // first time bridge.mjs actually exercised that path).
+  process.env.SH_ISSUER_PK = issuerPk
+  const { keyPath, pub } = await generateSshKeypair()
+  onLog('buying access to the peer job...')
+  // kp optional: buyGrant() reads SH_P_SK itself (and falls back to its
+  // own fresh Keypair.random() when unset, same as the BIT's own call
+  // below relies on) -- setting it here is just how a caller hands it a
+  // specific identity, same "env var as the real param" shape every
+  // other jr/*.mjs file already uses (e.g. buyinvite.mjs's own
+  // TG_JR_SK). bridge.mjs passes the demo's own new JA identity through
+  // this way, so this peer request (and the WS actor below) is
+  // unmistakably *that* identity, not a throwaway one.
+  if (kp) process.env.SH_P_SK = kp.secret()
+  const grantedKp = await buyGrant(onLog)
+  onLog('gate grant confirmed')
+
+  // Every JR now connects via the same fixed /jr path (ccddh.md's
+  // "retiring the registry" round) -- the old per-app smName (sh) is
+  // moot since the room collapse already put every real WS connection
+  // in one shared DO regardless of path.
+  const actor = {
+    app: pub, // the SSH public key, not the Stellar one -- see header
+    iss: { name: 'P', pk: grantedKp.publicKey() },
+    sk: grantedKp.secret(),
+    WebSocket,
+    wsArgs: [wsUrl],
+  }
+  const gen = job(actor, {
+    aud: 'peer', label: 'Peer',
+    // Which specific Agent's offer to match -- the one this Requester's
+    // own gate trade just paid, not just any offer sharing this aud
+    // (see daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing
+    // round).
+    targetPk: issuerPk,
+    matchTimeoutMs,
+  })
+  let grantLine
+  let step = await gen.next()
+  while (!step.done) {
+    const event = step.value
+    if (event.type === 'open') onLog('connected, waiting to be matched with E...')
+    else if (event.type === 'matched') onLog('matched -- waiting for the grant...')
+    else if (event.type === 'message') { grantLine = event.payload.sub; onLog(`received: ${grantLine}`) }
+    else if (event.type === 'error') onLog(`job error: ${event.error.message ?? event.error}`)
+    step = await gen.next()
+  }
+  onLog(step.value.message)
+  if (!grantLine) throw new Error('no grant line received');
+
+  const m = grantLine.match(/port=(\d+) externalIP=(\S+) user=(\S+)(?: jump=(\S+))?/)
+  if (!m) throw new Error(`unrecognized grant line: ${grantLine}`);
+  const [, sshPort, externalIP, user, jump] = m
+
+  const knownHosts = `${keyPath}.known_hosts`
+  const sshOpts = ['-i', keyPath, '-p', sshPort,
+    '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${knownHosts}`]
+  // jump (optional, grant.sh's own SH_AGENT_JUMP): E has no direct inbound
+  // reachability of its own -- route through this "user@host" instead
+  // (e.g. the VM's own hypervisor host, over its private network) --
+  // same as any other SSH jump host, nothing E-specific about -J itself.
+  if (jump) {
+    onLog(`(no direct route to E -- routing through ${jump})`)
+    sshOpts.push('-J', jump)
+  }
+
+  onLog(`retrieving staged content from ${user}@${externalIP}:${sshPort}...`)
+  await retrieveOverSsh(sshOpts, user, externalIP, destDir)
+  onLog(`retrieved into ${destDir}`)
+
+  await execFileP('ssh', [...sshOpts, `${user}@${externalIP}`, 'touch sh-stage/.retrieved'])
+  onLog('confirmed retrieval to E')
+
+  const readme = await fs.readFile(path.join(destDir, 'README.md'), 'utf-8').catch(() => null)
+  if (!readme) throw new Error('retrieved content is missing the expected README.md');
+  onLog(`retrieved content verified locally: ${readme.split('\n')[0]}`)
+  return destDir;
+}
+
+async function requestPeerBit () { // {{{1
   state = { status: 'running', log: [] }
   try {
-    const { keyPath, pub } = await generateSshKeypair()
-    log('buying access to the peer job...')
-    const kp = await buyGrant(log)
-    log('gate grant confirmed')
-
-    // Every JR now connects via the same fixed /jr path (ccddh.md's
-    // "retiring the registry" round) -- the old per-app smName (sh) is
-    // moot since the room collapse already put every real WS connection
-    // in one shared DO regardless of path.
-    const wsUrl = process.env.SH_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
-    const actor = {
-      app: pub, // the SSH public key, not the Stellar one -- see header
-      iss: { name: 'P', pk: kp.publicKey() },
-      sk: kp.secret(),
-      WebSocket,
-      wsArgs: [wsUrl],
-    }
-    const gen = job(actor, {
-      aud: 'peer', label: 'Peer',
-      // Which specific Agent's offer to match -- the one this Requester's
-      // own gate trade just paid, not just any offer sharing this aud
-      // (see daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing
-      // round).
-      targetPk: process.env.SH_ISSUER_PK,
-      matchTimeoutMs: Number(process.env.SH_MATCH_TIMEOUT_MS ?? 30_000),
-    })
-    let grantLine
-    let step = await gen.next()
-    while (!step.done) {
-      const event = step.value
-      if (event.type === 'open') log('connected, waiting to be matched with E...')
-      else if (event.type === 'matched') log('matched -- waiting for the grant...')
-      else if (event.type === 'message') { grantLine = event.payload.sub; log(`received: ${grantLine}`) }
-      else if (event.type === 'error') log(`job error: ${event.error.message ?? event.error}`)
-      step = await gen.next()
-    }
-    log(step.value.message)
-    if (!grantLine) throw new Error('no grant line received');
-
-    const m = grantLine.match(/port=(\d+) externalIP=(\S+) user=(\S+)(?: jump=(\S+))?/)
-    if (!m) throw new Error(`unrecognized grant line: ${grantLine}`);
-    const [, sshPort, externalIP, user, jump] = m
-
-    const knownHosts = `${keyPath}.known_hosts`
-    const sshOpts = ['-i', keyPath, '-p', sshPort,
-      '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${knownHosts}`]
-    // jump (optional, grant.sh's own SH_AGENT_JUMP): E has no direct inbound
-    // reachability of its own -- route through this "user@host" instead
-    // (e.g. the VM's own hypervisor host, over its private network) --
-    // same as any other SSH jump host, nothing E-specific about -J itself.
-    if (jump) {
-      log(`(no direct route to E -- routing through ${jump})`)
-      sshOpts.push('-J', jump)
-    }
-
-    log(`retrieving staged content from ${user}@${externalIP}:${sshPort}...`)
-    const dest = path.join(path.dirname(keyPath), 'sh-received')
-    await retrieveOverSsh(sshOpts, user, externalIP, dest)
-    log(`retrieved into ${dest}`)
-
-    await execFileP('ssh', [...sshOpts, `${user}@${externalIP}`, 'touch sh-stage/.retrieved'])
-    log('confirmed retrieval to E')
-
-    const readme = await fs.readFile(path.join(dest, 'README.md'), 'utf-8').catch(() => null)
-    if (readme) {
-      log(`BIT PASS -- retrieved content verified locally: ${readme.split('\n')[0]}`)
-      state.status = 'done'
-    } else {
-      log('BIT FAIL -- retrieved content is missing the expected README.md')
-      state.status = 'failed'
-    }
+    // No kp passed -- same as before this file's own requestPeer() was
+    // extracted, this BIT doesn't care which identity, just that the
+    // mechanism works; buyGrant() generates (and funds) its own fresh
+    // one when SH_P_SK is unset.
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sh-peer-'))
+    const destDir = path.join(dir, 'sh-received')
+    await requestPeer({ destDir, onLog: log })
+    log(`BIT PASS -- ${destDir}`)
+    state.status = 'done'
   } catch (err) {
     log(`BIT FAIL -- ${err.message}`)
     state.status = 'failed'
@@ -196,21 +240,30 @@ btn.onclick = async () => {
 };
 </script></body></html>`
 
-const server = http.createServer((req, res) => { // {{{1
-  if (req.method === 'GET' && req.url === '/') {
-    res.writeHead(200, { 'content-type': 'text/html' })
-    res.end(PITCH_HTML)
-  } else if (req.method === 'POST' && req.url === '/request') {
-    if (state.status === 'running') {
-      res.writeHead(409); res.end('already running'); return;
+if (import.meta.url === `file://${process.argv[1]}`) { // {{{1
+  // Guards the server from starting at import time -- tg/ja/public/jr/
+  // bridge.mjs imports this file's own requestPeer() without wanting a
+  // second, redundant local server listening on PORT too (caught live:
+  // before this guard existed, a plain `import { requestPeer } from
+  // './request-peer.mjs'` already printed "local page: ..." as a side
+  // effect, same bug main()'s own guard already exists elsewhere in
+  // this codebase to prevent).
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end(PITCH_HTML)
+    } else if (req.method === 'POST' && req.url === '/request') {
+      if (state.status === 'running') {
+        res.writeHead(409); res.end('already running'); return;
+      }
+      requestPeerBit()
+      res.writeHead(202); res.end('started')
+    } else if (req.method === 'GET' && req.url === '/status') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(state))
+    } else {
+      res.writeHead(404); res.end('not found')
     }
-    requestPeer()
-    res.writeHead(202); res.end('started')
-  } else if (req.method === 'GET' && req.url === '/status') {
-    res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify(state))
-  } else {
-    res.writeHead(404); res.end('not found')
-  }
-})
-server.listen(PORT, '127.0.0.1', () => console.log(`[sh:P] local page: http://localhost:${PORT}/`))
+  })
+  server.listen(PORT, '127.0.0.1', () => console.log(`[sh:P] local page: http://localhost:${PORT}/`))
+}
