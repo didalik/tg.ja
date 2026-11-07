@@ -79,7 +79,7 @@ const GRANT_TIMEOUT_MS = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG
 
 let state = { status: 'idle', log: [] } // {{{1
 const log = line => { console.log('[bridge]', line); state.log.push(line) }
-let echoChild = null // the one tracked child process this file ever spawns
+const echoChildren = [] // every tracked child process this file ever spawns
 
 //async function issuerPkOf (assetName) {{{1
 /** The real issuer's own PK for a given Job name, straight off the live
@@ -111,44 +111,78 @@ async function halfOfOwnersPrice (ownerPk, assetCode) {
   return (Number(offer.price) / 2).toString();
 }
 
-//async function spawnEcho ({ kp, ownerPk, price, shSnapshotDir }) {{{1
-/** The one tracked child process this whole flow ends in (dqad.md's
- * own design answer: "a tracked child process, no JA"): spawns the
- * just-retrieved tg/sh snapshot's own run.js, reselling ECHO (JI_PK set
- * to the Owner's own PK, not this identity's) at half its price,
- * through this same bridge's own embedded broker. Resolves once the
- * child's own stdout shows its gate is actually open ("gate selling"),
- * not merely that the process started -- the same concrete signal
- * tg/bit/Makefile's own demo-echo BIT already waits for. */
-function spawnEcho ({ kp, ownerPk, price, shSnapshotDir }) {
+//function spawnJob (label, env) {{{1
+/** Shared by spawnResaleEcho()/spawnOwnEcho() below: spawns the
+ * just-retrieved tg/sh snapshot's own run.js with the given env, tracks
+ * it in echoChildren for cleanup(), and resolves once its own stdout
+ * shows its gate is actually open ("gate selling"), not merely that the
+ * process started -- the same concrete signal tg/bit/Makefile's own
+ * demo-echo BIT already waits for. Two separate OS processes, not two
+ * offers sharing one -- each gets its own independent process.env from
+ * the moment it's spawned, so daeh/lib/job.ts's own per-match env
+ * snapshot (the reason tg/service.js's own multi-offer identities use
+ * one process with explicit per-offer params instead -- see
+ * tg/ja/gate.js's own grant() for that story) never comes up here at
+ * all; both still submit through the one embedded broker regardless. */
+function spawnJob (label, shSnapshotDir, env) {
   return new Promise((resolve, reject) => {
     const child = nodeSpawn('node', ['../run.js'], {
       cwd: path.join(shSnapshotDir, 'jobs'),
-      env: {
-        ...process.env,
-        SH_ISSUER_SK: kp.secret(),
-        SH_ASSET_CODE: 'ECHO',
-        JI_PK: ownerPk, // reselling, not issuing -- see tg/sh/gate.js's own header
-        SH_PRICE: price,
-        mTLS: 'true', // this identity now has a real cert, from csrAndWait() above
-        SH_BROKER_PORT: String(BROKER_PORT),
-        SH_WS_URL: WS_URL.replace('/jr', '/ja'), // this flow's own WS_URL is a jr path; run.js needs the matching /ja one
-      },
+      env: { ...process.env, ...env },
     })
-    echoChild = child
+    echoChildren.push(child)
     let settled = false
     child.stdout.on('data', chunk => {
       const text = chunk.toString()
-      for (const line of text.split('\n')) if (line.trim()) log(`[echo] ${line.trim()}`);
+      for (const line of text.split('\n')) if (line.trim()) log(`[${label}] ${line.trim()}`);
       if (!settled && text.includes('gate selling')) { settled = true; resolve(); }
     })
     child.stderr.on('data', chunk => {
-      for (const line of chunk.toString().split('\n')) if (line.trim()) log(`[echo:err] ${line.trim()}`);
+      for (const line of chunk.toString().split('\n')) if (line.trim()) log(`[${label}:err] ${line.trim()}`);
     })
     child.on('error', err => { if (!settled) { settled = true; reject(err); } })
     child.on('exit', code => {
-      if (!settled) { settled = true; reject(new Error(`echo process exited early (code ${code})`)); }
+      if (!settled) { settled = true; reject(new Error(`${label} process exited early (code ${code})`)); }
     })
+  });
+}
+
+//async function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir }) {{{1
+/** Resells the Owner's own ECHO (JI_PK set to the Owner's own PK, not
+ * this identity's) at half its price -- dqad.md's own design answer for
+ * "a tracked child process, no JA". */
+function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir }) {
+  return spawnJob('echo', shSnapshotDir, {
+    SH_ISSUER_SK: kp.secret(),
+    SH_ASSET_CODE: 'ECHO',
+    JI_PK: ownerPk, // reselling, not issuing -- see tg/sh/gate.js's own header
+    SH_PRICE: price,
+    mTLS: 'true', // this identity now has a real cert, from csrAndWait() above
+    SH_BROKER_PORT: String(BROKER_PORT),
+    SH_WS_URL: WS_URL.replace('/jr', '/ja'), // this flow's own WS_URL is a jr path; run.js needs the matching /ja one
+  });
+}
+
+//async function spawnOwnEcho ({ kp, shSnapshotDir }) {{{1
+/** The demo user's own, separately self-issued echo (dqad.md's own
+ * "implements and runs its own Job") -- JI_PK deliberately left unset,
+ * so gate.js self-issues ECHO:<this identity's own PK> instead of
+ * reselling the Owner's (spawnResaleEcho() above does that one): a
+ * brand new, distinct Stellar asset, not the same one at a different
+ * price. SH_DESCRIPTION posts it to /jobs under the same label
+ * tg/bit/Makefile's own demo-echo BIT already uses for this exact
+ * thing. Same jobs/echo/echo.mjs handler either way -- deterministic,
+ * delegates any arithmetic in the request to JA2's own real calc Job
+ * (ask-calc.mjs) -- nothing about self-issuing changes that; the gate's
+ * own asset/issuer never reaches the job handler. */
+function spawnOwnEcho ({ kp, shSnapshotDir }) {
+  return spawnJob('own-echo', shSnapshotDir, {
+    SH_ISSUER_SK: kp.secret(),
+    SH_ASSET_CODE: 'ECHO',
+    SH_DESCRIPTION: 'Tosh (demo device) -- deterministic, pays calc for real arithmetic',
+    mTLS: 'true',
+    SH_BROKER_PORT: String(BROKER_PORT),
+    SH_WS_URL: WS_URL.replace('/jr', '/ja'),
   });
 }
 
@@ -216,9 +250,21 @@ async function runJoinFlow () {
     })
     log('retrieved and verified')
 
-    log('starting your own echo...')
-    await spawnEcho({ kp, ownerPk, price, shSnapshotDir })
-    log('your own echo is live -- try it from the Jobs list')
+    log('starting your resale of the Owner\'s own echo...')
+    await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir })
+    log('your resale is live -- try it from the Jobs list')
+
+    log('implementing and starting your own, separately-issued echo...')
+    try {
+      await spawnOwnEcho({ kp, shSnapshotDir })
+      log('your own echo is live too -- delegates arithmetic to JA2\'s real calc Job')
+    } catch (err) {
+      // Best-effort: the resale above is the demo's own required
+      // deliverable, already live by this point -- a glitch standing up
+      // this second, more experimental offer shouldn't sink the whole
+      // flow.
+      log(`your own echo failed to start, continuing anyway: ${err.message}`)
+    }
 
     state.status = 'done'
   } catch (err) {
@@ -228,9 +274,11 @@ async function runJoinFlow () {
 }
 
 function cleanup () { // {{{1
-  if (echoChild && !echoChild.killed) {
-    console.log('[bridge] cleaning up -- stopping your own echo')
-    echoChild.kill()
+  for (const child of echoChildren) {
+    if (child && !child.killed) {
+      console.log('[bridge] cleaning up -- stopping a spawned echo')
+      child.kill()
+    }
   }
 }
 process.on('SIGINT', () => { cleanup(); process.exit(0); })
