@@ -12,11 +12,12 @@ reset({ content: document.getElementById('content1'), })
 // just fail cleanly -- csr still runs (and pays for) a real gate trade
 // first, since that part genuinely is generic, then the chat text sent
 // afterward fails CSR verification with nothing to show for it (caught
-// live: a real visitor polluted the Stellar side twice this way). csr is
-// listed anyway now -- ja.mjs's own main() shows a Work In Progress
-// message and returns before buyGrant() ever runs, so no trade gets
-// placed; still a real, buyable Job for anyone who already knows to use
-// the Node-side jr/csr.mjs instead. peer stays hidden until it gets the
+// live: a real visitor polluted the Stellar side twice this way). csr
+// now links to the local bridge instead (dqad.md's step 2) -- a plain
+// target='_blank' link, a top-level navigation into a new tab, never
+// subject to CORS the way a cross-origin fetch would be; an unreachable
+// bridge just shows the browser's own ordinary connection-failed page
+// in that tab, nothing for this page itself to detect. peer stays hidden until it gets the
 // same treatment (or its own dedicated flow) -- still usable via
 // jr/request-peer.mjs. sell joins it here too -- its own
 // {assetCode, requesterPk} structured payload (tg/ja/jobs/sell/sell.mjs)
@@ -31,6 +32,12 @@ reset({ content: document.getElementById('content1'), })
 // this time -- both Owner and JA2 will post their own buyInvite entry
 // to /jobs the moment their own services start.
 const BROWSER_UNSUPPORTED = new Set(['PEER', 'SELL', 'buyInvite'])
+
+// The local bridge's own default port (tg/ja/public/jr/bridge.mjs's own
+// BRIDGE_PORT default) -- http, not https: localhost is treated as a
+// secure context regardless of scheme, same reasoning dqad.md's own
+// step 2 already gives, so there's no TLS cert to juggle here either.
+const BRIDGE_URL = 'http://localhost:8099/'
 
 //async function renderCatalog () {{{1
 /** Fetches the KoT Jobs list (cnj.md -- tg/ws/src/jobs.ts, which replaced
@@ -61,11 +68,20 @@ async function renderCatalog () {
   }
 
   for (const j of jobs) {
-    const params = new URLSearchParams({ assetCode: j.name, issuerPk: j.issuerPk, description: j.desc ?? '' })
-    const href = `/ja?${params.toString()}`
+    // csr: a plain link to the local bridge, opened in a new tab -- see
+    // this file's own header comment above for why this sidesteps CORS
+    // entirely instead of needing it handled. BRIDGE_URL is the one
+    // thing a demo visitor's own bridge is expected to already be
+    // listening on by default (tg/ja/public/jr/bridge.mjs's own
+    // BRIDGE_PORT, unset by anyone who hasn't deliberately overridden
+    // it) -- there's no way for this page to discover a different port
+    // a specific visitor's own bridge might be using instead.
+    const [href, linkAttrs] = j.name === 'CSR'
+      ? [BRIDGE_URL, " target='_blank'"]
+      : [`/ja?${new URLSearchParams({ assetCode: j.name, issuerPk: j.issuerPk, description: j.desc ?? '' })}`, '']
     put(`<div class='job-card'>
       <b>${j.name}</b> -- ${j.desc ?? '(no description given)'}
-      <br/><a href='${href}'>Try this one</a>
+      <br/><a href='${href}'${linkAttrs}>Try this one</a>
     </div>`)
   }
 }
