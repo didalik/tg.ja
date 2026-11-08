@@ -343,14 +343,15 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
     res.end(JSON.stringify(state))
   } else if (req.method === 'POST' && req.url === '/leave') {
     // The pitch page's own pagehide beacon -- see its header comment.
-    // Responds before exiting so the beacon itself completes cleanly
-    // (not that the browser is still listening by this point either
-    // way), then runs the exact same shutdown cleanup() SIGTERM/SIGINT
-    // already trigger.
+    // Only tears down *this session's* own spawned echoes (cleanup())
+    // -- NOT process.exit() on the bridge server itself, which caught
+    // live would shut the whole bridge down on every single tab close,
+    // leaving it unable to serve a next visitor (or this same one,
+    // re-joining) at all. The bridge server is long-running
+    // infrastructure; a session is not.
     res.writeHead(204)
     res.end()
     cleanup()
-    process.exit(0)
   } else {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ error: 'not found' }))
