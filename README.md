@@ -21,10 +21,20 @@ and gets a *daily* scheduled reset (the original reasoning for resetting at all 
 of Stellar testnet's own periodic reset, ~every 3 months, by making a fresh account a non-event
 rather than a surprise) on real hardware (Pi5).
 
-**The proposed fix, not yet built:** decouple the reset from the restart path entirely (the same
-way mba's own Tosh setup already keeps `com.tosh.reset` on its own daily schedule, separate from
-`com.tosh.agent`'s `KeepAlive`-driven restarts) and run it at a *known, chosen* time instead --
-e.g. 3am daily:
+**What we do today, as an interim measure:** `tg/genesis.mjs` (root `k2` repo) runs at reset
+time, resetting the whole demo/QA environment back to a known-clean slate -- every mTLS cert
+except the Owner's and JA2's own revoked, every `/jobs` entry that isn't theirs retracted, any
+stray offer on either of their own accounts cancelled. This is a *blunt* fix, not a graceful
+one, and it's worth being explicit about the tradeoff it accepts: running it abandons everyone
+who already joined, mid-Job or not -- there's no draining, no grace period, no distinction
+between a Job that's about to finish and one that just started. It solves "the reset doesn't
+leave stale, misleading garbage behind" without solving "the reset doesn't interrupt anyone" --
+those are two different problems, and only the first one is handled so far.
+
+**The proposed fix for the second problem, not yet built:** decouple the reset from the restart
+path entirely (the same way mba's own Tosh setup already keeps `com.tosh.reset` on its own daily
+schedule, separate from `com.tosh.agent`'s `KeepAlive`-driven restarts) and run it at a *known,
+chosen* time instead -- e.g. 3am daily:
 
 1. Suspend gating new Jobs (stop placing fresh sell offers) -- nothing new starts.
 2. Wait for every already-gated Job to actually finish (PoP and PoD both landed). This is why
@@ -33,7 +43,7 @@ e.g. 3am daily:
 3. Force-stop anything that doesn't wrap up in a reasonable window, using the Job asset's own
    clawback flag (`AuthClawbackEnabledFlag`, already set on every issued asset -- see
    `reset.mjs`/`run.js`'s own `recreateAccount` call) rather than just waiting indefinitely.
-4. Only then run the account reset.
+4. Only then run `genesis.mjs` and the account reset.
 
 This shrinks the exposure from "a reset can hit any in-flight Job, any time" down to "a reset
 only ever happens in a window where nothing's expected to still be running" -- smaller, and
