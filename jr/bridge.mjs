@@ -313,6 +313,13 @@ btn.onclick = async () => {
     if (s.status !== 'running') { clearInterval(poll); btn.disabled = false; }
   }, 1000);
 };
+// Closing this tab (or navigating away) has to actually end the
+// session, not just stop watching it -- a closed tab doesn't touch the
+// Node process underneath at all on its own, which otherwise keeps
+// running (and keeps selling) indefinitely. sendBeacon, not fetch: the
+// browser guarantees it's sent even as the page is torn down, which an
+// ordinary fetch() from an unload handler isn't.
+window.addEventListener('pagehide', () => navigator.sendBeacon('/leave'));
 </script></body></html>`
 
 const bridgeServer = http.createServer((req, res) => { // {{{1
@@ -334,6 +341,16 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
   } else if (req.method === 'GET' && req.url === '/status') {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(state))
+  } else if (req.method === 'POST' && req.url === '/leave') {
+    // The pitch page's own pagehide beacon -- see its header comment.
+    // Responds before exiting so the beacon itself completes cleanly
+    // (not that the browser is still listening by this point either
+    // way), then runs the exact same shutdown cleanup() SIGTERM/SIGINT
+    // already trigger.
+    res.writeHead(204)
+    res.end()
+    cleanup()
+    process.exit(0)
   } else {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ error: 'not found' }))
