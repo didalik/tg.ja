@@ -282,16 +282,39 @@ async function runJoinFlow () {
   }
 }
 
-function cleanup () { // {{{1
+//async function cleanupLocalFiles (pk) {{{1
+/** Removes this identity's own local trace -- the cert/key directory
+ * (certDirFor()'s own, the same one csrAndWait()'s storeCert() wrote),
+ * and the Stellar SK/mainnet dirs by the same PK-keyed convention, if
+ * either ever exists (this flow never writes to either today, but
+ * removing something that was never there is a harmless no-op, and
+ * it's one less thing to re-check if that ever changes). Scoped to
+ * *this* identity's own PK only -- never a wholesale wipe of these
+ * shared directories, which a real visitor's own machine could
+ * already be using for something else entirely (another Stellar
+ * project, a previous run of this same demo). Best-effort: a failed
+ * removal here is logged, never thrown -- same posture every other
+ * shutdown-time cleanup in this file already has. */
+async function cleanupLocalFiles (pk) {
+  const home = process.env.HOME
+  const paths = [certDirFor(pk), `${home}/.config/.testnet/${pk}.sk`, `${home}/.config/.mainnet/${pk}`]
+  for (const p of paths) {
+    await fs.rm(p, { recursive: true, force: true }).catch(
+      err => console.log(`[bridge] local cleanup of ${p} failed: ${err.message}`));
+  }
+}
+
+async function cleanup () { // {{{1
   for (const child of echoChildren) {
     if (child && !child.killed) {
       console.log('[bridge] cleaning up -- stopping a spawned echo')
       child.kill()
     }
   }
+  if (state.pk) await cleanupLocalFiles(state.pk);
 }
-process.on('SIGINT', () => { cleanup(); process.exit(0); })
-process.on('SIGTERM', () => { cleanup(); process.exit(0); })
+process.on('SIGINT', () => { cleanup().then(() => process.exit(0)); })
+process.on('SIGTERM', () => { cleanup().then(() => process.exit(0)); })
 
 const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"> // {{{1
 <title>Become a Job Agent</title></head><body style="font-family: sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em">
@@ -343,12 +366,12 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
     res.end(JSON.stringify(state))
   } else if (req.method === 'POST' && req.url === '/leave') {
     // The pitch page's own pagehide beacon -- see its header comment.
-    // Only tears down *this session's* own spawned echoes (cleanup())
-    // -- NOT process.exit() on the bridge server itself, which caught
-    // live would shut the whole bridge down on every single tab close,
-    // leaving it unable to serve a next visitor (or this same one,
-    // re-joining) at all. The bridge server is long-running
-    // infrastructure; a session is not.
+    // Only tears down *this session's* own spawned echoes and local
+    // identity files (cleanup()) -- NOT process.exit() on the bridge
+    // server itself, which caught live would shut the whole bridge
+    // down on every single tab close, leaving it unable to serve a
+    // next visitor (or this same one, re-joining) at all. The bridge
+    // server is long-running infrastructure; a session is not.
     res.writeHead(204)
     res.end()
     cleanup()
