@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
 // tg/ja/public/jr/chat.mjs -- interactive, multi-turn chat with an {{{1
-// echo-offering Agent whose own job answers from an LLM (Tosh's sh-kind
-// echo, ccddh.md's Ollama round). The basic plumbing test (run.js) stays
+// echo-offering Agent, originally built for Ollama-backed sh-kind echo
+// (ccddh.md's Ollama round, since retired in favor of a deterministic
+// heuristic -- see tg/sh/jobs/echo/echo.mjs), still useful for any
+// multi-message echo conversation today (e.g. a sh-kind echo's own
+// calc-delegation, which needs a specific typed expression, not a
+// one-shot default line). The basic plumbing test (run.js) stays
 // untouched and minimal on purpose -- this is a deliberately separate
 // script, not a refactor of it.
 //

@@ -32,9 +32,10 @@ leave stale, misleading garbage behind" without solving "the reset doesn't inter
 those are two different problems, and only the first one is handled so far.
 
 **The proposed fix for the second problem, not yet built:** decouple the reset from the restart
-path entirely (the same way mba's own Tosh setup already keeps `com.tosh.reset` on its own daily
-schedule, separate from `com.tosh.agent`'s `KeepAlive`-driven restarts) and run it at a *known,
-chosen* time instead -- e.g. 3am daily:
+path entirely -- a pattern already proven out once on this same project (an earlier `launchd`-based
+Agent setup kept its own daily account reset on its own fixed schedule, entirely separate from its
+`KeepAlive`-driven crash restarts, specifically to avoid this exact coupling) -- and run it at a
+*known, chosen* time instead -- e.g. 3am daily:
 
 1. Suspend gating new Jobs (stop placing fresh sell offers) -- nothing new starts.
 2. Wait for every already-gated Job to actually finish (PoP and PoD both landed). This is why

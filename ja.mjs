@@ -30,8 +30,9 @@ reset({ content: document.getElementById('content1') }) // {{{1
  * time, instead of sending a single hardcoded line and ending
  * immediately (ccddh.md's "both cards run plain ECHO" round -- the
  * connection target was always right, but a one-shot "hello from jr"
- * never gave Tosh's own LLM-backed echo a real conversation to show
- * any difference in). */
+ * never let a visitor actually type their own message -- no way to
+ * send the specific arithmetic expression needed to see a sh-kind
+ * echo's own calc-delegation in action, for instance). */
 function makeOutbox () {
   const queue = []
   let pending
@@ -154,10 +155,10 @@ async function main () { // {{{1
 
   // Interactive, multi-turn chat -- form submit replaces the old single
   // hardcoded outbox.push('hello from jr'), the "End Session" button
-  // replaces Node chat.mjs's own Ctrl-D. Both the Agent's own job (if
-  // it's Tosh's) and the relay already support more than one message
-  // per Match (daeh/lib/job.ts's own indataEOD handling) -- this page
-  // just never drove it that way before. {{{1
+  // replaces Node chat.mjs's own Ctrl-D. Both the Agent's own job and
+  // the relay already support more than one message per Match (daeh/
+  // lib/job.ts's own indataEOD handling) -- this page just never drove
+  // it that way before. {{{1
   const form = document.getElementById('chatForm')
   const input = document.getElementById('chatInput')
   const sendBtn = document.getElementById('sendBtn')

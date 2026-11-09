@@ -19,14 +19,15 @@ under <code>ECHO</code> on its own.
 </p>
 <p>
 This is also where the <a href='/'>intro page</a>'s own pitch becomes something you can actually
-poke at: if you picked Tosh's LLM-backed echo, try asking it something needing exact arithmetic --
-e.g. "what's 17 times 23?" -- instead of a plain fact. Watch for a reply like "The result of the
-calculation is 391": that's not the LLM doing the math, it's the LLM recognizing it shouldn't
-trust itself with the math, and paying a separate Job (<code>calc</code>, over this same Toll Gate,
-in real crypto) for the exact answer instead. If you picked <code>calc</code> directly instead, it
-has no LLM at all -- just type an expression (<code>+</code>, <code>-</code>, <code>*</code>,
-<code>/</code>, parens) and it answers exactly, every time, the same Job Tosh's own echo is paying
-under the hood.
+poke at: if you picked a demo user's own, separately-issued echo, try sending it a bare expression
+instead of a plain message -- e.g. <code>17*23</code>, not "what's 17 times 23?" (that second form
+just gets echoed back as plain text; only the first looks enough like arithmetic to act on). Watch
+for a reply that's just the number, <code>391</code> -- it's not that echo doing the math itself,
+it's a plain heuristic recognizing the input looks like arithmetic, and paying a separate Job
+(<code>calc</code>, over this same Toll Gate, in real crypto) for the exact answer instead. If you
+picked <code>calc</code> directly instead, that's the same Job running standalone -- type any
+expression (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, parens) and it answers
+exactly, every time, the same Job every echo-with-arithmetic is paying under the hood.
 </p><hr/>
 <form id='chatForm'>
   <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />

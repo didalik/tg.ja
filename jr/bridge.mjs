@@ -179,7 +179,7 @@ function spawnOwnEcho ({ kp, shSnapshotDir }) {
   return spawnJob('own-echo', shSnapshotDir, {
     SH_ISSUER_SK: kp.secret(),
     SH_ASSET_CODE: 'ECHO',
-    SH_DESCRIPTION: 'Tosh (demo device) -- deterministic, pays calc for real arithmetic',
+    SH_DESCRIPTION: 'Demo Agent\'s own echo -- deterministic, pays calc for real arithmetic',
     mTLS: 'true',
     SH_BROKER_PORT: String(BROKER_PORT),
     SH_WS_URL: WS_URL.replace('/jr', '/ja'),
