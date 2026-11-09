@@ -305,11 +305,28 @@ async function cleanupLocalFiles (pk) {
 }
 
 async function cleanup () { // {{{1
+  const exits = []
   for (const child of echoChildren) {
     if (child && !child.killed) {
       console.log('[bridge] cleaning up -- stopping a spawned echo')
+      exits.push(new Promise(resolve => child.once('exit', resolve)))
       child.kill()
     }
+  }
+  // Waits for each child's own shutdown (cancelling its offer, retracting
+  // its /jobs entry -- see tg/sh/run.js's own shutdown handler) to
+  // actually finish before removing local files below, not just for the
+  // signal to be sent -- that shutdown needs this identity's own cert to
+  // authenticate the /jobs DELETE call, caught live getting pulled out
+  // from under it (ENOENT) when this ran immediately after child.kill()
+  // instead. 15s covers its own worst case (a 5s DELETE timeout plus up
+  // to 5 1s-spaced retries in cancelOwnOffer()) with room to spare; a
+  // child that still hasn't exited by then is logged, not waited on
+  // forever.
+  const timeout = new Promise(resolve => setTimeout(resolve, 15_000))
+  if (exits.length > 0) {
+    const winner = await Promise.race([Promise.all(exits).then(() => 'exited'), timeout])
+    if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 15s -- cleaning up local files anyway');
   }
   if (state.pk) await cleanupLocalFiles(state.pk);
 }
