@@ -333,9 +333,10 @@ async function cleanup () { // {{{1
 process.on('SIGINT', () => { cleanup().then(() => process.exit(0)); })
 process.on('SIGTERM', () => { cleanup().then(() => process.exit(0)); })
 
-const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"> // {{{1
+//const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"> // {{{1
+const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Become a Job Agent</title></head><body style="font-family: sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em">
-<h2>Join the Toll Gate, for real</h2>
+<h2>Join the Kloud of Trust, for real</h2>
 <p>This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
 the Owner's own <code>echo</code> Job at half its price, and spins up your own live <code>echo</code>
 Agent -- all real Stellar transactions, nothing mocked. Your new identity is disposable: it's
