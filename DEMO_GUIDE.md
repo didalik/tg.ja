@@ -98,5 +98,26 @@ tried under Termux itself yet, so treat it as the one remaining unknown.
   generate your one-off certificate request; confirmed live, it's not bundled with Termux's base
   install. `openssh` provides the `ssh`/`tar` the `peer` step uses to retrieve `tg.sh`'s own code
   from the Owner's side -- same reasoning.)
-- Then follow "One-time setup" above as-is, in the same Termux session.
+- In Termux (this part still has to be typed on the phone's own keyboard -- everything after it
+  won't be):
+
+  ```
+  termux-wake-lock
+  passwd
+  pkill sshd; sshd
+  ```
+
+  (`termux-wake-lock` stops Android from dozing the whole session -- the bridge needs to keep
+  running the entire time you're trying the demo. `passwd` sets a login password: Termux's own
+  `sshd` has none by default, so skipping this leaves every connection attempt rejected. Its
+  `sshd` listens on port `8022`, not the usual `22`.)
+- Find the phone's own IP address (Android Settings -> Wi-Fi -> tap the connected network), then
+  from a real computer on the same network:
+
+  ```
+  ssh -p 8022 <phone's IP>
+  ```
+
+  (same password you just set). From *that* session -- a real keyboard, not the phone's own --
+  follow "One-time setup" above as-is.
 - Open the intro page in your phone's own browser (same phone, same Termux session running).
