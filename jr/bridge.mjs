@@ -12,37 +12,36 @@
 // this file is the orchestration on top, not a new implementation of
 // any of them.
 //
-// Embeds tg/sh's own broker (startBroker()) directly -- every one of
-// those calls, and the spawned run.js itself, submit through it (see
-// tg/sh/broker.mjs's own header). Reached via a plain filesystem path,
-// not an import specifier: this submodule deliberately never depends
-// on tg/sh (it may not even be a sibling directory on a standalone
-// clone), but on an actual demo device it has to be -- this file is
-// the one place that boundary gets crossed, explicitly, via SH_DIR.
+// Embeds this submodule's own ../broker.mjs (startBroker()) directly --
+// every one of those calls, and the spawned run.js itself, submit
+// through it (see broker.mjs's own header). A plain local import, not a
+// filesystem path into a required sibling clone: broker.mjs used to
+// only exist in tg/sh (a *private* repo), reached here via SH_DIR --
+// caught live, DEMO_GUIDE.md's own one-time setup was telling a real
+// demo visitor to clone it, which fails for anyone but Дід Alik.
+// broker.mjs is now a promoted copy here instead (same reason
+// broker-client.mjs/find-pk.mjs already are), so this submodule stays
+// genuinely independently cloneable -- tg/sh is still needed, but only
+// later, and only ever reached live via a `peer` retrieval (see
+// request-peer.mjs), never a git clone.
 //
 // No CORS/reachability-probe logic at all, on purpose: the demo page's
 // own `csr` entry is just a plain link to this server's own `/` (a
 // top-level navigation into a new tab, never subject to CORS the way a
-// cross-origin fetch would be), opened only once this bridge -- and the
-// tg/sh clone it needs -- are already running. An unreachable bridge
-// just shows the browser's own ordinary connection-failed page in that
-// tab; there's nothing for this file to detect or report about that
-// case itself.
+// cross-origin fetch would be), opened only once this bridge is already
+// running. An unreachable bridge just shows the browser's own ordinary
+// connection-failed page in that tab; there's nothing for this file to
+// detect or report about that case itself.
 //
 // Usage:
 //   node bridge.mjs
-//   (first, one time: clone both didalik/tg.ja and didalik/sh as
-//   siblings, e.g. ~/k2-ja and ~/k2-sh -- this file lives in the
-//   former, SH_DIR points at the latter)
+//   (first, one time: clone didalik/tg.ja, npm install -- see
+//   DEMO_GUIDE.md)
 //
 // Env:
-//   SH_DIR            -- optional, defaults to ~/k2-sh -- where the
-//                        tg.sh clone this bridge embeds the broker from
-//                        (and later spawns the live echo from a fresh
-//                        `peer` retrieval of, not this one) lives.
 //   SH_BROKER_PORT     -- optional, defaults to 8793 (see
-//                        tg/sh/broker.mjs) -- this bridge's own
-//                        embedded broker's port.
+//                        ../broker.mjs) -- this bridge's own embedded
+//                        broker's port.
 //   BRIDGE_PORT        -- optional, defaults to 8099.
 //   TG_WS_URL          -- optional, defaults to the qa deploy's own /jr
 //                        path.
@@ -59,18 +58,17 @@ import fs from 'node:fs/promises'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { Keypair } from '@stellar/stellar-sdk'
 import { generate_keypair } from '@amissine/daeh/sdk.js'
 import { httpize } from '@amissine/daeh/util.mjs'
 import { server } from '@amissine/daeh/stellar.mjs'
+import { startBroker } from '../broker.mjs'
 import { requestBuyInvite } from './buyinvite.mjs'
 import { certDirFor, csrAndWait, generateCsr } from './csr.mjs'
 import { sellAndWait } from './sell.mjs'
 import { requestPeer } from './request-peer.mjs'
 
-const SH_DIR = process.env.SH_DIR ?? path.join(process.env.HOME, 'k2-sh') // {{{1
-const BROKER_PORT = Number(process.env.SH_BROKER_PORT ?? 8793)
+const BROKER_PORT = Number(process.env.SH_BROKER_PORT ?? 8793) // {{{1
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 8099)
 const WS_URL = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
 const DEMO_CERT_EMAIL = process.env.DEMO_CERT_EMAIL ?? 'demo@kloudoftrust.org'
@@ -469,8 +467,7 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
   }
 })
 
-const { startBroker } = await import(pathToFileURL(path.join(SH_DIR, 'broker.mjs')).href) // {{{1
-startBroker({ port: BROKER_PORT })
+startBroker({ port: BROKER_PORT }) // {{{1
 bridgeServer.listen(BRIDGE_PORT, '127.0.0.1', () => {
   console.log(`[bridge] listening on http://localhost:${BRIDGE_PORT}/ -- leave this running`)
 })

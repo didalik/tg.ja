@@ -14,10 +14,8 @@ entry point for.
 
 ```
 git clone https://github.com/didalik/tg.ja.git k2-ja
-git clone https://github.com/didalik/sh.git k2-sh
-(cd k2-ja && npm install)
-(cd k2-sh && npm install)
-cd k2-ja/jr
+cd k2-ja && npm i
+cd jr
 node bridge.mjs
 ```
 
