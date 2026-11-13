@@ -266,6 +266,17 @@ async function runJoinFlow () {
       invite: inviteReply.invite, paymentTx: inviteReply.paymentTx,
       matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: log,
     })
+    // generateCsr()/storeCert() (the latter inside csrAndWait() above)
+    // are the only other writers of the local files cleanup() removes
+    // (certDirFor(pk), the .sk file) -- if the TTL fires anywhere during
+    // this step (most likely: it's the one step with an open-ended human
+    // wait), cleanup() runs while some or none of those files exist yet,
+    // and whatever generateCsr()/storeCert() write *after* that point
+    // would otherwise never be removed by anything (spawnJob() has its
+    // own version of this same check, for the same reason). Re-running
+    // it here is a plain, idempotent re-removal, not a second "cleaned"
+    // transition.
+    if (session.cleaned) await cleanupLocalFiles(pk);
     log('you are now, briefly, a real Job Agent')
 
     log('buying the Owner\'s own echo inventory to resell...')
@@ -350,10 +361,16 @@ async function cleanup (session) { // {{{1
   // cleanup() call (an explicit /leave arriving after the TTL already
   // fired, say) still needs to revisit session.children for anything
   // new since the last pass. child.killed guards against re-killing one
-  // this function (or spawnJob()'s own check) already signalled;
-  // filesRemoved guards the local-file removal, which is separate from
-  // "cleaned" precisely so it stays a one-time thing even though cleaned
-  // no longer is.
+  // this function (or spawnJob()'s own check) already signalled; local
+  // file removal below has no guard of its own at all, deliberately --
+  // fs.rm(..., {force:true}) is already a safe no-op on a path that's
+  // already gone, so there's no reason to track whether this already
+  // ran, and every reason not to: anything written to those same paths
+  // after an earlier cleanup() call (same risk spawnJob() guards against
+  // for children -- see runJoinFlow()'s own explicit re-check right
+  // after csrAndWait(), the one other writer of these paths) needs a
+  // later call to actually remove it, not skip it because an earlier
+  // call already "did" this.
   if (!session) return;
   session.cleaned = true
   clearTimeout(session.ttl)
@@ -380,10 +397,7 @@ async function cleanup (session) { // {{{1
     const winner = await Promise.race([Promise.all(exits).then(() => 'exited'), timeout])
     if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 15s -- cleaning up local files anyway');
   }
-  if (session.pk && !session.filesRemoved) {
-    session.filesRemoved = true
-    await cleanupLocalFiles(session.pk);
-  }
+  if (session.pk) await cleanupLocalFiles(session.pk);
 }
 process.on('SIGINT', () => { cleanup(currentSession).then(() => process.exit(0)); })
 process.on('SIGTERM', () => { cleanup(currentSession).then(() => process.exit(0)); })
