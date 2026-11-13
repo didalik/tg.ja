@@ -218,15 +218,27 @@ async function runJoinFlow () {
   if (currentSession) cleanup(currentSession);
   state = { status: 'running', log: [] }
   const children = []
+  let session // {{{1
   try {
     const [sk, pk] = (await generate_keypair()).split(' ')
     const kp = Keypair.fromSecret(sk)
     state.pk = pk
     log(`new identity: ${pk}`)
 
-    const session = { pk, children, cleaned: false }
+    session = { pk, children, cleaned: false }
     currentSession = session
-    session.ttl = setTimeout(() => { if (currentSession === session) cleanup(session); }, SESSION_TTL_MS)
+    // The TTL itself is armed below, only once this flow actually
+    // finishes ('done' or 'failed') -- not here. This flow includes two
+    // open-ended human-approval waits (CSR, SELL) with no timeout of
+    // their own, by design (human review has no fixed SLA, same posture
+    // as every other unset timeout in this codebase) -- arming it this
+    // early raced that wait: a real approval just took a while, the TTL
+    // fired anyway, and spawnResaleEcho() got its own child killed on
+    // arrival (spawnJob()'s own guard, working exactly as designed --
+    // just against a session that was never actually abandoned). The
+    // TTL's own job is to catch a *completed* session nobody's watching
+    // any more, not to cap how long the join flow itself is allowed to
+    // take.
 
     const ja2Pk = await issuerPkOf('CALC')
     const ownerPk = await issuerPkOf('CSR')
@@ -319,9 +331,20 @@ async function runJoinFlow () {
     }
 
     state.status = 'done'
+    // Armed here, not at the top of this function -- see the comment
+    // above session's own creation. From this point on, the flow is
+    // just a completed, running echo (or two) with nobody necessarily
+    // still watching -- exactly what the TTL exists to catch.
+    session.ttl = setTimeout(() => { if (currentSession === session) cleanup(session); }, SESSION_TTL_MS)
   } catch (err) {
     log(`FAILED -- ${err.message}`)
     state.status = 'failed'
+    // Nothing left to wait for -- a failed attempt is done, not merely
+    // idle, so this cleans up right away rather than arming a TTL for
+    // later. Safe even if session was never assigned (an error before
+    // identity generation, say): cleanup()'s own guard no-ops on
+    // undefined.
+    cleanup(session)
   }
 }
 
@@ -406,9 +429,9 @@ const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="wi
 <h2>Join the Kloud of Trust, for real</h2>
 <p>This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
 the Owner's own <code>echo</code> Job at half its price, and spins up your own live <code>echo</code>
-Agent -- all real Stellar transactions, nothing mocked. Your new identity is disposable: it's
-cleaned up automatically within ${Math.round(SESSION_TTL_MS / 60_000)} minutes at the latest, whether
-this ends cleanly or not.</p>
+Agent -- all real Stellar transactions, nothing mocked. Your new identity is disposable: once it's
+live, it's cleaned up automatically within ${Math.round(SESSION_TTL_MS / 60_000)} minutes at the
+latest, whether this ends cleanly or not.</p>
 <button id="go" style="font-size: 1.2em; padding: 0.5em 1em">Join now</button>
 <pre id="log" style="background:#111;color:#0f0;padding:1em;white-space:pre-wrap;min-height:4em"></pre>
 <script>
