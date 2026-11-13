@@ -79,7 +79,21 @@ const GRANT_TIMEOUT_MS = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG
 
 let state = { status: 'idle', log: [] } // {{{1
 const log = line => { console.log('[bridge]', line); state.log.push(line) }
-const echoChildren = [] // every tracked child process this file ever spawns
+// Auto-cleanup fallback (SESSION_TTL_MS): the pitch page below promises
+// "cleaned up automatically, whether this ends cleanly or not" -- but
+// the only thing that ever actually called cleanup() was an explicit
+// /leave (the page's own pagehide beacon) or this process getting a
+// SIGINT/SIGTERM. A tab that's just left open indefinitely (no pagehide
+// ever fires) or silently lost (phone sleeps, browser's killed, the
+// beacon never reaches this process) never triggered either one --
+// caught live: a demo visitor's own left-open tab kept selling long
+// after they'd walked away. currentSession, not a bare timer closure:
+// each runJoinFlow() call owns its own {pk, children}, and the timer
+// checks it's still the *current* one before acting, so a second join
+// started after the first already finished can't have its own state
+// torn down by the first one's stale timer.
+const SESSION_TTL_MS = Number(process.env.BRIDGE_SESSION_TTL_MS ?? 15 * 60_000)
+let currentSession = null
 
 //async function issuerPkOf (assetName) {{{1
 /** The real issuer's own PK for a given Job name, straight off the live
@@ -114,7 +128,8 @@ async function halfOfOwnersPrice (ownerPk, assetCode) {
 //function spawnJob (label, env) {{{1
 /** Shared by spawnResaleEcho()/spawnOwnEcho() below: spawns the
  * just-retrieved tg/sh snapshot's own run.js with the given env, tracks
- * it in echoChildren for cleanup(), and resolves once its own stdout
+ * it in the caller's own session.children for cleanup(), and resolves
+ * once its own stdout
  * shows its gate is actually open ("gate selling"), not merely that the
  * process started -- the same concrete signal tg/bit/Makefile's own
  * demo-echo BIT already waits for. Two separate OS processes, not two
@@ -124,13 +139,13 @@ async function halfOfOwnersPrice (ownerPk, assetCode) {
  * one process with explicit per-offer params instead -- see
  * tg/ja/gate.js's own grant() for that story) never comes up here at
  * all; both still submit through the one embedded broker regardless. */
-function spawnJob (label, shSnapshotDir, env) {
+function spawnJob (label, shSnapshotDir, children, env) {
   return new Promise((resolve, reject) => {
     const child = nodeSpawn('node', ['../run.js'], {
       cwd: path.join(shSnapshotDir, 'jobs'),
       env: { ...process.env, ...env },
     })
-    echoChildren.push(child)
+    children.push(child)
     let settled = false
     child.stdout.on('data', chunk => {
       const text = chunk.toString()
@@ -151,8 +166,8 @@ function spawnJob (label, shSnapshotDir, env) {
 /** Resells the Owner's own ECHO (JI_PK set to the Owner's own PK, not
  * this identity's) at half its price -- dqad.md's own design answer for
  * "a tracked child process, no JA". */
-function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir }) {
-  return spawnJob('echo', shSnapshotDir, {
+function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir, children }) {
+  return spawnJob('echo', shSnapshotDir, children, {
     SH_ISSUER_SK: kp.secret(),
     SH_ASSET_CODE: 'ECHO',
     JI_PK: ownerPk, // reselling, not issuing -- see tg/sh/gate.js's own header
@@ -175,8 +190,8 @@ function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir }) {
  * delegates any arithmetic in the request to JA2's own real calc Job
  * (ask-calc.mjs) -- nothing about self-issuing changes that; the gate's
  * own asset/issuer never reaches the job handler. */
-function spawnOwnEcho ({ kp, shSnapshotDir }) {
-  return spawnJob('own-echo', shSnapshotDir, {
+function spawnOwnEcho ({ kp, shSnapshotDir, children }) {
+  return spawnJob('own-echo', shSnapshotDir, children, {
     SH_ISSUER_SK: kp.secret(),
     SH_ASSET_CODE: 'ECHO',
     SH_DESCRIPTION: 'Demo Agent\'s own echo -- deterministic, pays calc for real arithmetic',
@@ -189,12 +204,21 @@ function spawnOwnEcho ({ kp, shSnapshotDir }) {
 //async function runJoinFlow () {{{1
 /** The whole sequence, dqad.md's steps 5-9, start to finish. */
 async function runJoinFlow () {
+  // A previous session this bridge never got an explicit /leave or TTL
+  // expiry for yet (e.g. a retry right after a 'failed' run) -- tear it
+  // down now instead of leaking its children/local files forever.
+  if (currentSession) cleanup(currentSession);
   state = { status: 'running', log: [] }
+  const children = []
   try {
     const [sk, pk] = (await generate_keypair()).split(' ')
     const kp = Keypair.fromSecret(sk)
     state.pk = pk
     log(`new identity: ${pk}`)
+
+    const session = { pk, children, cleaned: false }
+    currentSession = session
+    session.ttl = setTimeout(() => { if (currentSession === session) cleanup(session); }, SESSION_TTL_MS)
 
     const ja2Pk = await issuerPkOf('CALC')
     const ownerPk = await issuerPkOf('CSR')
@@ -260,12 +284,12 @@ async function runJoinFlow () {
     log('retrieved and verified')
 
     log('starting your resale of the Owner\'s own echo...')
-    await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir })
+    await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir, children })
     log('your resale is live -- try it from the Jobs list')
 
     log('implementing and starting your own, separately-issued echo...')
     try {
-      await spawnOwnEcho({ kp, shSnapshotDir })
+      await spawnOwnEcho({ kp, shSnapshotDir, children })
       log('your own echo is live too -- delegates arithmetic to JA2\'s real calc Job')
     } catch (err) {
       // Best-effort: the resale above is the demo's own required
@@ -304,9 +328,19 @@ async function cleanupLocalFiles (pk) {
   }
 }
 
-async function cleanup () { // {{{1
+async function cleanup (session) { // {{{1
+  // session: whichever {pk, children, ttl} this call is for -- the
+  // explicit /leave handler, the TTL timer above, and SIGINT/SIGTERM
+  // below all pass in whatever they believe the live one to be, and the
+  // guard here (not just the TTL timer's own currentSession check) makes
+  // a second call for the same session -- e.g. an explicit /leave
+  // arriving right as the TTL also fires -- a harmless no-op rather than
+  // a double teardown.
+  if (!session || session.cleaned) return;
+  session.cleaned = true
+  clearTimeout(session.ttl)
   const exits = []
-  for (const child of echoChildren) {
+  for (const child of session.children) {
     if (child && !child.killed) {
       console.log('[bridge] cleaning up -- stopping a spawned echo')
       exits.push(new Promise(resolve => child.once('exit', resolve)))
@@ -328,10 +362,10 @@ async function cleanup () { // {{{1
     const winner = await Promise.race([Promise.all(exits).then(() => 'exited'), timeout])
     if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 15s -- cleaning up local files anyway');
   }
-  if (state.pk) await cleanupLocalFiles(state.pk);
+  if (session.pk) await cleanupLocalFiles(session.pk);
 }
-process.on('SIGINT', () => { cleanup().then(() => process.exit(0)); })
-process.on('SIGTERM', () => { cleanup().then(() => process.exit(0)); })
+process.on('SIGINT', () => { cleanup(currentSession).then(() => process.exit(0)); })
+process.on('SIGTERM', () => { cleanup(currentSession).then(() => process.exit(0)); })
 
 //const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"> // {{{1
 const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -340,7 +374,8 @@ const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="wi
 <p>This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
 the Owner's own <code>echo</code> Job at half its price, and spins up your own live <code>echo</code>
 Agent -- all real Stellar transactions, nothing mocked. Your new identity is disposable: it's
-cleaned up automatically, whether this ends cleanly or not.</p>
+cleaned up automatically within ${Math.round(SESSION_TTL_MS / 60_000)} minutes at the latest, whether
+this ends cleanly or not.</p>
 <button id="go" style="font-size: 1.2em; padding: 0.5em 1em">Join now</button>
 <pre id="log" style="background:#111;color:#0f0;padding:1em;white-space:pre-wrap;min-height:4em"></pre>
 <script>
@@ -392,7 +427,7 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
     // server is long-running infrastructure; a session is not.
     res.writeHead(204)
     res.end()
-    cleanup()
+    cleanup(currentSession)
   } else {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ error: 'not found' }))
