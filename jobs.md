@@ -4,8 +4,8 @@ Every Job currently offered -- by the Owner, by JA2, or by anyone who's joined s
 live at the deploy's own `/jobs` endpoint. This file is the other half: what each Job actually
 *does*, since the catalog itself only ever carries a one-line `desc`. For how the gate-trade
 mechanism itself works (PoP, PoD, the Stellar DEX side of things), see the
-[intro page](https://qa.ja.tg.kloudoftrust.org) and `dqad.md`/`cnj.md` (root `k2` repo) -- this
-file assumes that part and just walks through each Job name.
+[intro page](https://qa.ja.tg.kloudoftrust.org) -- this file assumes that part and just walks
+through each Job name.
 
 ## Getting the live list
 
@@ -13,8 +13,9 @@ file assumes that part and just walks through each Job name.
 curl -s https://qa.ws.tg.kloudoftrust.org/jobs | jq '.'
 ```
 
-A sample of what comes back (yours will differ -- prices, issuers, and `postedOn` all change as
-people join, reset, or undercut each other):
+A sample of what comes back (yours will differ -- issuers and `postedOn` both change as people
+join or reset). No price field at all, on purpose -- that lives on the Stellar DEX offer itself,
+not in this catalog.
 
 ```json
 [
@@ -38,6 +39,12 @@ name can have several issuers at once -- the Owner's own `ECHO` and a reseller's
 separate catalog entries, same name, different issuer, usually different price). Request any of
 them the same way: a gate trade against that specific `issuerPk`, same mechanism regardless of
 which Job it is.
+
+`/jobs` itself has no fixed list -- it shows *every* Job anyone has ever posted, not just the ones
+below. The six here are what this demo (the intro page, `DEMO_GUIDE.md`) actually walks you
+through today; once more people join and implement Jobs of their own, `/jobs` will carry names
+this file says nothing about. Treat this as "what you'll run into right now", not as the full set
+of what's possible.
 
 ## What each Job actually does
 
