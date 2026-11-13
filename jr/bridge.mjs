@@ -138,14 +138,24 @@ async function halfOfOwnersPrice (ownerPk, assetCode) {
  * snapshot (the reason tg/service.js's own multi-offer identities use
  * one process with explicit per-offer params instead -- see
  * tg/ja/gate.js's own grant() for that story) never comes up here at
- * all; both still submit through the one embedded broker regardless. */
-function spawnJob (label, shSnapshotDir, children, env) {
+ * all; both still submit through the one embedded broker regardless.
+ *
+ * Takes the whole session, not just its children array: the TTL (or an
+ * explicit /leave) can fire *while* a slow step like csrAndWait()'s own
+ * human-approval wait is still in progress, well before this spawn ever
+ * happens -- cleanup() already ran, found no children yet, and won't
+ * run again for this session. Without this check, a child spawned after
+ * that point would never be visited by anything and would leak forever
+ * -- caught live: the TTL fired mid-flow, the flow carried on anyway and
+ * spawned two echoes afterward, and nothing ever stopped them. */
+function spawnJob (label, shSnapshotDir, session, env) {
   return new Promise((resolve, reject) => {
     const child = nodeSpawn('node', ['../run.js'], {
       cwd: path.join(shSnapshotDir, 'jobs'),
       env: { ...process.env, ...env },
     })
-    children.push(child)
+    session.children.push(child)
+    if (session.cleaned) { child.kill(); } // session was already torn down before this spawn landed -- don't let it outlive that
     let settled = false
     child.stdout.on('data', chunk => {
       const text = chunk.toString()
@@ -166,8 +176,8 @@ function spawnJob (label, shSnapshotDir, children, env) {
 /** Resells the Owner's own ECHO (JI_PK set to the Owner's own PK, not
  * this identity's) at half its price -- dqad.md's own design answer for
  * "a tracked child process, no JA". */
-function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir, children }) {
-  return spawnJob('echo', shSnapshotDir, children, {
+function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir, session }) {
+  return spawnJob('echo', shSnapshotDir, session, {
     SH_ISSUER_SK: kp.secret(),
     SH_ASSET_CODE: 'ECHO',
     JI_PK: ownerPk, // reselling, not issuing -- see tg/sh/gate.js's own header
@@ -190,8 +200,8 @@ function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir, children }) {
  * delegates any arithmetic in the request to JA2's own real calc Job
  * (ask-calc.mjs) -- nothing about self-issuing changes that; the gate's
  * own asset/issuer never reaches the job handler. */
-function spawnOwnEcho ({ kp, shSnapshotDir, children }) {
-  return spawnJob('own-echo', shSnapshotDir, children, {
+function spawnOwnEcho ({ kp, shSnapshotDir, session }) {
+  return spawnJob('own-echo', shSnapshotDir, session, {
     SH_ISSUER_SK: kp.secret(),
     SH_ASSET_CODE: 'ECHO',
     SH_DESCRIPTION: 'Demo Agent\'s own echo -- deterministic, pays calc for real arithmetic',
@@ -284,12 +294,12 @@ async function runJoinFlow () {
     log('retrieved and verified')
 
     log('starting your resale of the Owner\'s own echo...')
-    await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir, children })
+    await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir, session })
     log('your resale is live -- try it from the Jobs list')
 
     log('implementing and starting your own, separately-issued echo...')
     try {
-      await spawnOwnEcho({ kp, shSnapshotDir, children })
+      await spawnOwnEcho({ kp, shSnapshotDir, session })
       log('your own echo is live too -- delegates arithmetic to JA2\'s real calc Job')
     } catch (err) {
       // Best-effort: the resale above is the demo's own required
@@ -331,12 +341,20 @@ async function cleanupLocalFiles (pk) {
 async function cleanup (session) { // {{{1
   // session: whichever {pk, children, ttl} this call is for -- the
   // explicit /leave handler, the TTL timer above, and SIGINT/SIGTERM
-  // below all pass in whatever they believe the live one to be, and the
-  // guard here (not just the TTL timer's own currentSession check) makes
-  // a second call for the same session -- e.g. an explicit /leave
-  // arriving right as the TTL also fires -- a harmless no-op rather than
-  // a double teardown.
-  if (!session || session.cleaned) return;
+  // below all pass in whatever they believe the live one to be.
+  // Deliberately safe (and necessary) to call more than once for the
+  // same session: session.cleaned is set here, synchronously, before
+  // this function's first await, specifically so spawnJob() can check
+  // it and kill-on-arrival a child that's spawned *after* this already
+  // ran once (see spawnJob()'s own header) -- which means a later
+  // cleanup() call (an explicit /leave arriving after the TTL already
+  // fired, say) still needs to revisit session.children for anything
+  // new since the last pass. child.killed guards against re-killing one
+  // this function (or spawnJob()'s own check) already signalled;
+  // filesRemoved guards the local-file removal, which is separate from
+  // "cleaned" precisely so it stays a one-time thing even though cleaned
+  // no longer is.
+  if (!session) return;
   session.cleaned = true
   clearTimeout(session.ttl)
   const exits = []
@@ -362,7 +380,10 @@ async function cleanup (session) { // {{{1
     const winner = await Promise.race([Promise.all(exits).then(() => 'exited'), timeout])
     if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 15s -- cleaning up local files anyway');
   }
-  if (session.pk) await cleanupLocalFiles(session.pk);
+  if (session.pk && !session.filesRemoved) {
+    session.filesRemoved = true
+    await cleanupLocalFiles(session.pk);
+  }
 }
 process.on('SIGINT', () => { cleanup(currentSession).then(() => process.exit(0)); })
 process.on('SIGTERM', () => { cleanup(currentSession).then(() => process.exit(0)); })
