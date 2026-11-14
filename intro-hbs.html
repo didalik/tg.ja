@@ -9,52 +9,58 @@
   </head>
   <body>
 <div id='div1'>
-    <h3>The KoT Jobs: Matched on Cloudflare, Gated and Settled on Stellar</h3>
+    <h3>Jobs in the Kloud of Trust</h3>
+    <p align="center"><i>Matched on Cloudflare, Gated and Settled on Stellar</i></p>
     <p>
-The Kloud of Trust (KoT) matches Job Requests with Job Agents on Cloudflare, and settles deals
-between them on Stellar -- no platform in the middle taking a cut or holding the keys. What's
-running here isn't a mockup: two genuinely independent agents, each selling access to a real
-Job, trade and get paid entirely on-chain, without ever needing to see each other directly.
+The <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a>
+is just like other exchanges: you get a trade when your buy/sell order is countered by someone
+else (or when you counter someone else's order), and the trade price is set by the original
+order. This lets you compete with other sellers of the same asset -- if the price of your
+original sell order is the lowest one, you get the trade even though other sellers placed their
+orders before you. Or, if you're buying and there are no sellers yet, you'll be the first one to
+eventually get a trade if you give the highest price. Same price, and you're entering a Stellar
+DEX queue.
     </p>
     <p>
-<b>Known issue:</b> Chrome on Android currently fails to open the WebSocket connection below --
-the gate trade fills fine, then the session silently fails to match. Firefox (or any desktop
-browser) works fine -- use that if you're on Android, for now.
+This well-known mechanism lets the Kloud of Trust (KoT) both queue and trade Jobs, and
+eventually match Job Requests (JRs) with Job Agents (JAs). A Job is a
+<a href='https://stellar.github.io/js-stellar-sdk/reference/core-assets/' target='_blank'>Stellar Asset</a>
+<code>&lt;name&gt;:&lt;issuer-pk&gt;</code> for JRs to buy, and for JAs to sell. The Stellar DEX is on 24/7, so
+whenever the counter arrives, both trade parties get notified. Polling the asset's order book is
+free on Stellar -- as well as the trade confirmation, which now is the <b>Proof of Purchase</b> (PoP)
+for the KoT Job, kept on Stellar forever.
+    </p>
+    <p>
+The JA has just received the payment (in XLM, Stellar's native asset) for the offered Job.
+Now the parties proceed to match on Cloudflare using the
+<a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets/#why-use-hibernation' target='_blank'>Hibernation API</a>.
+If the Match phase succeeds, the Relay phase connects them together to run the Job. When the Job
+is run, the JR party pays back to the JA the amount of Job Asset they traded.
+This payment is now the <b>Proof of Delivery</b> (PoD) for this Job, kept on Stellar forever.
+    </p>
+    <p>
+This is the KoT Jobs base. It lets JAs offer Jobs from a laptop behind a home router,
+even from an Android phone running <a href='https://termux.dev/en/' target='_blank'>Termux</a>, and stay with
+no public IP while reachable 24/7.
     </p>
 <p>
-A Job Agent issues its own Stellar asset and sells one unit of it at a fixed price, like a
-toll booth selling passage. The trade that buys it <i>is</i> the receipt: a public, timestamped
-<b>Proof of Purchase</b> (PoP), free because the <a href='https://developers.stellar.org/docs/learn/fundamentals/liquidity-on-stellar-sdex-liquidity-pools' target='_blank'>Stellar DEX</a> produces it as a side
-effect of the trade itself -- which also queues multiple Job Requests one at a time. The Agent needs
-no public IP: a laptop behind a home router, even an Android phone running
-<a href='https://termux.dev/en/' target='_blank'>Termux</a>, stays reachable 24/7, since it only
-ever makes outbound connections.
-</p>
-<p>
-Paying the toll matches you with the Agent over a WebSocket, relayed through a single Cloudflare
-Durable Object's <a href='https://developers.cloudflare.com/durable-objects/best-practices/websockets' target='_blank'>Hibernation API</a> -- the whole Job runs without the Agent paying for idle
-compute between messages. Once it's done, the Requester pays the same asset straight back: an
-ordinary, unilateral Stellar payment that <i>is</i> <b>Proof of Delivery</b> (PoD). Two
-transactions, PoP and PoD, bookend every Job -- no escrow, no dispute, nobody in the middle.
-</p>
-<p>
-The goal: <b>wrap Cloudflare-matched Jobs with Stellar tokenomics</b>, so anybody can offer
-a Job and get paid when it's run. This demo is the entry point -- <i>request</i> a Job (plain echo,
-below) to start with, <i>join</i> as a Job Agent, <i>implement and offer</i> your own Job, <i>get paid</i> once
-it's requested and run. If that's interesting to you, I'd love to have you
-join us.
+The project's goal: <b>wrap Cloudflare-matched KoT Jobs with Stellar tokenomics</b>, so anybody can offer
+a Job and get paid when it's run. This demo is the project's introduction -- <i>request</i> a Job (plain echo,
+below) to start with, <i>join</i> as a demo JA, <i>implement and offer</i> your own Job (or
+<i>resell</i> a Job issued by another JA), <i>get paid</i> once it's requested and run. If that's
+interesting to you, I'd love to have you
+<a href='https://github.com/didalik/tg.ja/tree/main' target='_blank'>join us</a>.
 </p><p>
 Cheers,
     </p><p>
 Дід Alik, aka Alec Missine, with Claude<br/>
-didalik.aim@gmail.com
     </p>
 <h4>Join the QA process</h4>
 <p>
 This demo doubles as the entry point to KoT's own QA process -- the path that gets the
 tokenomics ready for PROD. The Job that actually lets you join is <b>CSR</b>: pay the
 toll, and get back a real Cloudflare-issued mTLS certificate --
-your credential to run your own Job Agent and start offering Jobs of your own.
+your credential to run your own JA and start offering Jobs of your own.
 </p>
 <h4> <a href='https://github.com/didalik/tg.ja/blob/main/jobs.md' target='_blank'>Available Jobs</a> right now</h4>
 <p>

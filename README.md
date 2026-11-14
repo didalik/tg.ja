@@ -4,7 +4,13 @@ The "ja"-kind Toll Gate Agent/Requester: offers `echo`, `csr`, `sell`, `buyInvit
 the Requester-side CLI tools (`jr/`) that buy them, including the local bridge (`jr/bridge.mjs`)
 that drives the whole join flow for a demo visitor in one process.
 
-See `dqad.md` and `cnj.md` (root `k2` repo) for the demo/QA process this is a part of.
+See `DEMO_GUIDE.md` for how to join, and `jobs.md` for what every Job in the catalog actually does.
+
+## Known issue: Chrome on Android can't open the WebSocket match
+
+The gate trade fills fine, but the session then silently fails to match -- Chrome on Android
+currently can't open the WebSocket connection the Match/Relay phase needs. Firefox (or any
+desktop browser) works fine; use that on Android for now.
 
 ## Known open question: the daily account reset can interrupt an in-flight Job
 
@@ -21,7 +27,7 @@ and gets a *daily* scheduled reset (the original reasoning for resetting at all 
 of Stellar testnet's own periodic reset, ~every 3 months, by making a fresh account a non-event
 rather than a surprise) on real hardware (Pi5).
 
-**What we do today, as an interim measure:** `tg/genesis.mjs` (root `k2` repo) runs at reset
+**What we do today, as an interim measure:** a reset script runs at reset
 time, resetting the whole demo/QA environment back to a known-clean slate -- every mTLS cert
 except the Owner's and JA2's own revoked, every `/jobs` entry that isn't theirs retracted, any
 stray offer on either of their own accounts cancelled. This is a *blunt* fix, not a graceful
