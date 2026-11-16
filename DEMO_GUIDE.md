@@ -39,7 +39,8 @@ open is for -- if you see a connection error here instead, the bridge isn't actu
 everything from here happens without you typing anything else:
 
 1. The page asks the bridge for a signed invite on your behalf. You won't see this step -- it's
-   between the bridge and the KoT's own agents, settled in a few seconds.
+   between the bridge and the KoT's own agents, settled in a few seconds
+   ([details](#details-requesting-a-job-on-both-sides-of-the-trade)).
 2. With that invite in hand, the bridge requests a real Cloudflare-issued certificate for a
    one-off identity it generated just for this session. A few more seconds, then the page tells
    you: **you're now a Job Agent.**
@@ -77,6 +78,59 @@ Close the tab, close the bridge, whenever you're done. Nothing from this session
 outlive it -- if you want to actually join for real afterward, that's a separate, deliberate step
 (an invite someone sends you on purpose, not the demo's own disposable one), not a continuation of
 this.
+
+## Details: requesting a Job, on both sides of the trade
+
+Step 1 above ("the page asks the bridge for a signed invite") is really the first of several
+times this exact same thing happens in this guide -- csr, sell, and peer each do it again later,
+just trading a different Job. Worth seeing once in full, since every other step is the same shape
+with the names changed.
+
+`buyInvite` here means one specific Stellar asset: `buyInvite:<JA2's own public key>`. Buying one
+unit of it *is* the request -- there's no separate "submit a request" step, no API call, no form.
+The trade itself carries the request, and it's visible to anyone, forever, on Stellar's own
+ledger, the moment it fills.
+
+**The bridge's own side (the Requester):**
+
+1. Generates a fresh, disposable Stellar keypair -- never reused, never the identity you'll
+   actually join as (that one comes later, from `csr`).
+2. Establishes a trustline to `buyInvite:<JA2's PK>` (required before holding any non-native
+   Stellar asset at all), then places a buy offer: 1 unit, at JA2's own going price.
+3. JA2 already has a matching sell offer open and waiting, so the Stellar DEX fills this
+   immediately -- this fill is the **Proof of Purchase** (PoP), a timestamped, public trade
+   record, free as a side effect of the trade itself.
+4. The bridge connects over a WebSocket to the shared Cloudflare Durable Object, announcing
+   itself as a buyer of JA2's own `buyInvite`. The Durable Object pairs it with JA2's own
+   matching connection (the **Match** phase) and relays messages between the two from then on
+   (**Relay**) -- Cloudflare's own Hibernation API keeps this open with no cost for either side
+   while nothing's being said.
+5. Over that relay, the bridge sends what it needs (how long the invite should stay valid for)
+   and gets back a real, signed invite token from JA2.
+6. Finally, the bridge pays the same `buyInvite` unit straight back to JA2 -- an ordinary Stellar
+   payment, and the **Proof of Delivery** (PoD): the Job genuinely ran, not just that it was paid
+   for.
+
+**JA2's own side (the Agent):**
+
+1. Keeps exactly one `buyInvite` sell offer open at a time, waiting on the DEX.
+2. Watches for it to fill (the same trade the bridge's own step 3 above causes) -- once it does,
+   JA2 knows someone just paid for this `buyInvite` unit specifically, though not yet who.
+3. Waits to be Match/Relay-paired with that specific buyer over the same Durable Object.
+4. Once paired, runs the actual `buyInvite` Job: in this demo, auto-approved, so it immediately
+   generates and signs a fresh invite and sends it back over the relay. (A real deployment might
+   gate this behind a human allow-list instead -- the mechanism up to this point is identical
+   either way.)
+5. As soon as that invite's sent, immediately posts a fresh `buyInvite` sell offer -- ready for
+   whoever's next, regardless of whether the bridge's own PoD payment (step 6 above) has actually
+   landed yet. JA2 doesn't wait on it: PoD is the bridge's own unilateral payment, not something
+   JA2's own loop is watching for before moving on.
+
+Two Stellar transactions (PoP, PoD) and one Cloudflare-relayed exchange in between -- no escrow,
+no third party holding anything, no dispute process, because there's never a moment where either
+side is trusting the other on faith. `csr`, `sell`, and `peer` later in this guide each repeat
+this same sequence: a different Job name, a different payload exchanged over the relay, but the
+same two Stellar transactions bookending it every time.
 
 ## Appendix: on Android (Termux)
 
