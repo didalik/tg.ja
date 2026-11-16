@@ -73,6 +73,19 @@ function makeOutbox () {
 
 async function main () { // {{{1
   const [sk, pk] = (await generate_keypair()).split(' ') // {{{2
+  // Set before buyGrant() runs, not left for it to generate its own --
+  // buyGrant() reads TG_JR_SK when present (falling back to a fresh
+  // Keypair.random() only when it's unset), so this is what makes the
+  // Stellar keypair that actually places the gate trade the *same* one
+  // signing this process's own WS handshake below (actor.sk/iss.pk).
+  // Without it, matchRO()'s own Agent-side targetPk check (tg/ws/src/
+  // wsfsm.ts) can never succeed: the Agent resolves its own targetPk from
+  // the trade's real counterparty, but this process would be connecting
+  // under a completely unrelated identity of its own. Caught live: every
+  // other jr/*.mjs caller (csr.mjs, sell.mjs, buyinvite.mjs, chat.mjs)
+  // already sets this first for exactly this reason -- this file was the
+  // one exception.
+  process.env.TG_JR_SK = sk
 
   // One asset per Job, not a shared 'TGA' (ccddh.md) -- 'ECHO' is this
   // one's own fixed selector, overridden by an explicit TG_ASSET_CODE
