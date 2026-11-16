@@ -99,12 +99,15 @@ async function cancelStaleOffers (kp, asset) {
 
 //export async function grant (onLog = () => {}) {{{1
 /** Opens the gate (places a fresh sell offer for 1 unit of the Agent's own
- * asset) and resolves once someone's matching trade fills it. Used to
- * also resolve with the Requester's own account, for buildPod() (now
+ * asset) and resolves, once someone's matching trade fills it, with that
+ * trade's own counterparty PK (see granted()'s own comment below). Used
+ * to also resolve with the Requester's own account, for buildPod() (since
  * retired -- see ccddh.md's "Proof of Delivery, Redefined": the Requester
  * pays the asset back unilaterally once the Job is done, instead of the
- * Agent building a clawback transaction for it to co-sign, so the Agent
- * no longer needs to know who the Requester even was). */
+ * Agent building a clawback transaction for it to co-sign) -- resolving
+ * with who paid is back now for a different reason: the caller passes it
+ * on as the following runJob()'s own targetPk, so the WS Match phase
+ * only pairs this offer with whoever's trade actually filled it. */
 export async function grant (onLog = () => {}) {
   const sk = process.env.JA_SK
   if (!sk) throw new Error('JA_SK must be set (this Agents own Stellar secret key)');
@@ -128,7 +131,10 @@ export async function grant (onLog = () => {}) {
     }
     const granted = (effect, suffix) => {
       onLog(`granted -- trade filled (bought ${effect.bought_amount} XLM for 1 ${assetCode()})${suffix}`)
-      finish(resolve);
+      // effect.seller: despite the name, the counterparty's own account id
+      // on every trade effect -- see tg/ja/gate.js's own granted() for why
+      // this gets passed through instead of just resolving bare.
+      finish(resolve, effect.seller);
     }
 
     // Subscribed *before* placing the sell -- same race as

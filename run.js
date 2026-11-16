@@ -195,7 +195,10 @@ for (;;) {
   // selling out now just throws and crashes, same as any other
   // unrecoverable error here; Restart=always is the only safety net
   // left for it, same as it always was for everything else in this loop.
-  await gateGrant(log)
+  // See tg/ja/run.js's own comment: gateGrant() resolves with the
+  // trade's own counterparty PK, which becomes this offer's own targetPk
+  // for the WS Match phase.
+  offer.targetPk = await gateGrant(log)
   // Proof of Delivery, redefined (ccddh.md): the Requester pays the
   // gate asset back unilaterally once the Job is done (see jr/run.js),
   // not something this Agent builds or sends -- no prefix needed here

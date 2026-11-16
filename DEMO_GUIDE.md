@@ -115,8 +115,11 @@ ledger, the moment it fills.
 
 1. Keeps exactly one `buyInvite` sell offer open at a time, waiting on the DEX.
 2. Watches for it to fill (the same trade the bridge's own step 3 above causes) -- once it does,
-   JA2 knows someone just paid for this `buyInvite` unit specifically, though not yet who.
-3. Waits to be Match/Relay-paired with that specific buyer over the same Durable Object.
+   JA2 reads exactly who just paid straight off that trade (Horizon's trade effect carries a
+   `seller` field that -- despite the name -- actually identifies the counterparty), not just that
+   *someone* did.
+3. Only matches a Match/Relay pairing against that specific buyer -- a different connection
+   claiming the same `buyInvite` at the same moment, real payment or not, gets ignored.
 4. Once paired, runs the actual `buyInvite` Job: in this demo, auto-approved, so it immediately
    generates and signs a fresh invite and sends it back over the relay. (A real deployment might
    gate this behind a human allow-list instead -- the mechanism up to this point is identical
