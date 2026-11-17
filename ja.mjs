@@ -64,6 +64,83 @@ async function waitForType (gen, type) {
   throw new Error(`ja: connection closed before a '${type}' event`);
 }
 
+//function isMatchTimeout (err) {{{1
+/** True only for daeh/lib/job.ts's own match-timeout failure ("no match
+ * found[ within Nms]") -- the one failure this page can actually fix by
+ * trying again: this attempt's own gate trade just paid a seller that
+ * never showed up to claim it (a dead transient JA's own stale resale,
+ * say -- see tg/ja/jobs/sell/sell.mjs's own SELL_AMOUNT=1 comment for
+ * why one retry is normally enough), and that same payment is also what
+ * consumed whatever inventory that dead offer was still holding, so a
+ * fresh attempt's own trade should now land on a live seller instead.
+ * Any other failure (a bad asset code, Horizon down, a real network
+ * error) is left to surface as-is -- retrying wouldn't fix those, and
+ * silently masking them would just hide a real problem. */
+function isMatchTimeout (err) {
+  return /no match found/.test(err?.message ?? '');
+}
+
+const MAX_ATTEMPTS = 3 // {{{1
+// Bounded, not unlimited: SELL_AMOUNT=1 means at most one dead reseller's
+// own offer should ever stand between a buyer and a live seller at any
+// given moment in the common case -- one retry already clears it, one
+// more covers the unlikely case of a couple dying in close succession.
+// A persistent failure past that is treated as real, not retried forever.
+
+//async function connectAndMatch (wsUrl, assetCode, issuerPk, aud) {{{1
+/** The gate trade + WS Match, retried on a match timeout only (see
+ * isMatchTimeout() above). Each attempt is a genuinely fresh one -- new
+ * keypair, new trade, new WS identity -- not a retry of the same actor:
+ * the failed attempt's own requesterKp has nothing to pay back (no Job
+ * ever ran) and nothing else to clean up, so it's simply discarded. */
+async function connectAndMatch (wsUrl, assetCode, issuerPk, aud) {
+  for (let attempt = 1; ; attempt++) {
+    const [sk, pk] = (await generate_keypair()).split(' ')
+    window.process.env.TG_ASSET_CODE = assetCode
+    window.process.env.JI_PK = issuerPk
+    delete window.process.env.JA_PK // a stale value from a previous failed attempt must never leak into this one's own targetPk below -- buyGrant() sets this fresh, from this attempt's own trade, every time
+    // Set before buyGrant() runs, not left for it to generate its own --
+    // buyGrant() reads TG_JR_SK when present, falling back to a fresh
+    // Keypair.random() only when it's unset, so this is what makes the
+    // Stellar keypair that actually places the gate trade the *same* one
+    // signing this attempt's own WS handshake below (actor.sk/iss.pk).
+    // Without it, matchRO()'s own Agent-side targetPk check (tg/ws/src/
+    // wsfsm.ts) can never succeed for ANY request, not just a dead-
+    // reseller one: the Agent resolves its own targetPk from the trade's
+    // real counterparty, but this page would be connecting under a
+    // completely unrelated identity of its own every time. Caught live,
+    // reproducing this page's own pre-existing logic directly: a real
+    // trade filled against the real Owner correctly, and the match still
+    // timed out regardless, every time -- the same bug jr/run.js and
+    // ask-calc.mjs both had, here in the one page actual demo visitors
+    // use.
+    window.process.env.TG_JR_SK = sk
+
+    const actor = { app: 'jr', iss: { name: 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
+    const requesterKp = await buyGrant(line => out(`gate: ${line}`))
+    const seller = window.process.env.JA_PK === window.process.env.JI_PK ? 'issuer' : 'reseller'
+    out(`gate granted by ${seller}`)
+
+    const outbox = makeOutbox()
+    const gen = job(actor, {
+      aud, label: aud === 'calc' ? 'Calc' : 'Echo', outbox,
+      // Which specific Agent's offer to match -- the one this Requester's
+      // own gate trade just paid (JA_PK, when a reseller's own trade set it
+      // differently from JI_PK), not just any offer sharing this aud (see
+      // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
+      targetPk: window.process.env.JA_PK ?? window.process.env.JI_PK,
+      matchTimeoutMs: 30_000,
+    })
+    try {
+      await waitForType(gen, 'matched')
+      return { gen, outbox, requesterKp };
+    } catch (err) {
+      if (!isMatchTimeout(err) || attempt >= MAX_ATTEMPTS) throw err;
+      out(`that seller didn't respond -- trying again...`)
+    }
+  }
+}
+
 //async function nextMessage (gen) {{{1
 /** Drains gen until the next 'message' event (the Agent's own reply) --
  * skipping over 'output' (just confirms what *we* sent) along the way.
@@ -90,8 +167,6 @@ async function main () { // {{{1
   // from.
   const wsUrl = wsize(`${location.origin}/jr`)
 
-  const [sk, pk] = (await generate_keypair()).split(' ')
-
   // intro.mjs's own renderCatalog links here with ?assetCode=&issuerPk=
   // straight from /jobs (cnj.md's own Job model: a Job *is* just a name
   // and its real issuer) -- no more registry, no more realIssuerPk/
@@ -115,34 +190,10 @@ async function main () { // {{{1
     out('csr is Work In Progress -- not requestable from the browser yet. Use the Node-side jr/csr.mjs for now.')
     return;
   }
-  window.process.env.TG_ASSET_CODE = assetCode
-  window.process.env.JI_PK = issuerPk
   const aud = assetCode.toLowerCase()
   if (picked.get('description')) out(picked.get('description'))
 
-  const actor = {
-    app: 'jr',
-    iss: { name: 'jr', pk },
-    sk,
-    WebSocket,
-    wsArgs: [wsUrl],
-  }
-
-  const requesterKp = await buyGrant(line => out(`gate: ${line}`))
-  const seller = window.process.env.JA_PK === window.process.env.JI_PK ? 'issuer' : 'reseller'
-  out(`gate granted by ${seller}`)
-
-  const outbox = makeOutbox()
-  const gen = job(actor, {
-    aud, label: aud === 'calc' ? 'Calc' : 'Echo', outbox,
-    // Which specific Agent's offer to match -- the one this Requester's
-    // own gate trade just paid (JA_PK, when a reseller's own trade set it
-    // differently from JI_PK), not just any offer sharing this aud (see
-    // daeh/lib/sdk.js's MRT.setTarget -- ccddh.md's Match-pairing round).
-    targetPk: window.process.env.JA_PK ?? window.process.env.JI_PK,
-    matchTimeoutMs: 30_000,
-  })
-  await waitForType(gen, 'matched')
+  const { gen, outbox, requesterKp } = await connectAndMatch(wsUrl, assetCode, issuerPk, aud)
   out(aud === 'calc'
     ? "Matched -- type an arithmetic expression below and hit Send, e.g. '2 + 3 * 4'. One gate trade pays for the whole session."
     : 'Matched -- type a message below and hit Send. One gate trade pays for the whole session.')
