@@ -90,7 +90,22 @@ const log = line => { console.log('[bridge]', line); state.log.push(line) }
 // checks it's still the *current* one before acting, so a second join
 // started after the first already finished can't have its own state
 // torn down by the first one's stale timer.
-const SESSION_TTL_MS = Number(process.env.BRIDGE_SESSION_TTL_MS ?? 15 * 60_000)
+//
+// 3 minutes, not 15 (ccddh.md's "keep all the users we can" round): the
+// actual "try it yourself" steps take seconds, not minutes -- 15 was
+// never a real requirement, just a generous first guess. It matters well
+// beyond this one session's own tidiness now: every minute this stays
+// open is a minute any *other* visitor's own plain echo request can
+// deterministically settle against this session's own dead resale
+// instead (Stellar's DEX breaks a price tie by offer age, so a live
+// identity's own same-priced resale never wins the race against an
+// older, already-dead one until this session's own offer is gone) --
+// shortening this directly shrinks that window for everyone, not just
+// this session. tg/ja/jobs/sell/sell.mjs's own DEMO_RESALE_TTL_MS
+// default tracks this same value -- the Owner's own sweep deadline
+// should match the client's own expected session length, not a stale,
+// independently-chosen number.
+const SESSION_TTL_MS = Number(process.env.BRIDGE_SESSION_TTL_MS ?? 3 * 60_000)
 let currentSession = null
 
 //async function issuerPkOf (assetName) {{{1
