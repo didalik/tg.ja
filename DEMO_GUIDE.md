@@ -6,9 +6,10 @@ Agent yourself, via the `csr` Job.
 
 `csr` needs a small helper -- the local bridge -- running on your own machine first, because it
 does real work on your behalf (generating a one-off identity, requesting a real Cloudflare
-certificate, buying and reselling real Job inventory) that a browser tab alone can't. See `dqad.md`
-and `cnj.md` (root `k2` repo) for the underlying mechanics and the overall pitch this demo is the
-entry point for.
+certificate, buying and reselling real Job inventory) that a browser tab alone can't. See
+["Details: requesting a Job, on both sides of the trade"](#details-requesting-a-job-on-both-sides-of-the-trade)
+below for the underlying mechanics, and `jobs.md` for the overall pitch this demo is the entry
+point for.
 
 ## One-time setup
 
