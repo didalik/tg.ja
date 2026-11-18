@@ -11,6 +11,14 @@ certificate, buying and reselling real Job inventory) that a browser tab alone c
 below for the underlying mechanics, and `jobs.md` for the overall pitch this demo is the entry
 point for.
 
+**What to expect, start to finish:** every link here opens its own tab rather than replacing the
+one you're on, on purpose -- so trying one Job never costs you another's still-live session. A
+full run through this guide opens six, in order: this intro page; `echo` and `calc`, each tried
+straight from it (optional, but confirms the straightforward case before joining); `csr`'s own
+bridge page; and, once that finishes, two more direct links the bridge page itself offers --
+chatting with your own new identity's own echo, and the Owner's own echo again, now cheaper. Six
+is the steady-state count; fewer usually means a step silently failed somewhere along the way.
+
 ## One-time setup
 
 ```
@@ -143,9 +151,8 @@ same two Stellar transactions bookending it every time.
 
 ## Appendix: on Android (Termux)
 
-**Status: unverified on an actual phone** -- the bridge itself is real and has been proven
-end-to-end on real hardware (a Mac, an Ubuntu box), but this specific package list hasn't been
-tried under Termux itself yet, so treat it as the one remaining unknown.
+**Verified on a real phone** -- the full six-tab run above, start to finish, confirmed working
+end-to-end on Termux itself, not just a Mac or an Ubuntu box.
 
 - Install [Termux](https://termux.dev/en/) from F-Droid, not the Play Store build -- Termux's own
   packages aren't updated there any more.
