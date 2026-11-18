@@ -344,11 +344,17 @@ async function runJoinFlow () {
     try {
       await spawnOwnEcho({ kp, shSnapshotDir, session })
       log('your own echo is live too -- delegates arithmetic to JA2\'s real calc Job')
+      state.ownEchoLive = true
     } catch (err) {
       // Best-effort: the resale above is the demo's own required
       // deliverable, already live by this point -- a glitch standing up
       // this second, more experimental offer shouldn't sink the whole
-      // flow.
+      // flow. state.ownEchoLive stays false/unset -- PITCH_HTML's own
+      // script checks this before showing the "chat with your own echo"
+      // link, which otherwise has nothing live to actually match against
+      // (caught live: the link appeared anyway, pointed at a real pk, and
+      // its own gate trade then hung -- no fill, ever, since nothing had
+      // posted a sell offer for that identity's own echo at all).
       log(`your own echo failed to start, continuing anyway: ${err.message}`)
     }
 
@@ -468,8 +474,8 @@ latest, whether this ends cleanly or not.</p>
 <pre id="log" style="background:#111;color:#0f0;padding:1em;white-space:pre-wrap;min-height:4em"></pre>
 <div id="tryit" style="display:none; margin-top: 1em;">
   <p><b>Try it now:</b></p>
-  <p><a id="ownEcho" href="#">Chat with your own echo &rarr;</a> -- the one you just stood up,
-  self-issued, delegates real arithmetic to JA2's own calc Job.</p>
+  <p id="ownEchoP" style="display:none;"><a id="ownEcho" href="#">Chat with your own echo &rarr;</a>
+  -- the one you just stood up, self-issued, delegates real arithmetic to JA2's own calc Job.</p>
   <p><a id="ownerEcho" href="#">Request the Owner's echo again &rarr;</a> -- notice it's cheaper
   than before: that's your own new identity undercutting it, live.</p>
 </div>
@@ -487,8 +493,17 @@ btn.onclick = async () => {
     log.textContent = s.log.join('\\n');
     if (s.status === 'done' && s.pk && !shown) {
       shown = true;
-      document.getElementById('ownEcho').href =
-        '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: s.pk });
+      // ownEchoP stays hidden unless spawnOwnEcho() actually succeeded --
+      // s.ownEchoLive is unset/false on its own best-effort failure
+      // (runJoinFlow()'s own comment), and there's nothing live for this
+      // link to ever match against otherwise. ownerEcho has no such gap:
+      // spawnResaleEcho() isn't best-effort, so status can't reach 'done'
+      // without it already having succeeded.
+      if (s.ownEchoLive) {
+        document.getElementById('ownEcho').href =
+          '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: s.pk });
+        document.getElementById('ownEchoP').style.display = 'block';
+      }
       document.getElementById('ownerEcho').href =
         '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: '${ownerPk}' });
       tryit.style.display = 'block';
