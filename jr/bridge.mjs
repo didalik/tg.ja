@@ -514,21 +514,26 @@ btn.onclick = async () => {
       // without it already having succeeded.
       if (s.ownEchoLive) {
         document.getElementById('ownEcho').href =
-          '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: s.pk });
+          '${JA_PAGE_URL}/echo?' + new URLSearchParams({ issuerPk: s.pk });
         document.getElementById('ownEchoP').style.display = 'block';
       }
       document.getElementById('ownerEcho').href =
-        '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: '${ownerPk}' });
+        '${JA_PAGE_URL}/echo?' + new URLSearchParams({ issuerPk: '${ownerPk}' });
       tryit.style.display = 'block';
     }
-    // Scrolls *after* tryit's own display is set, not before -- scrollTo's
-    // own document.body.scrollHeight is measured at call time, so doing
-    // this first measured the page as it was before the links div went
-    // visible, scrolling to the bottom of the log while the actual new
-    // content (the two links) sat just below the fold, out of view. Caught
-    // live: a real visitor's own links rendered correctly, pointed at the
-    // right pk, and were simply never scrolled into view.
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Once tryit is showing, scroll to *it* specifically, not to the
+    // page's own absolute bottom -- by the time 'done' is reached, the
+    // log above it can already be taller than the viewport, so scrolling
+    // to the page bottom only ever guaranteed the LAST line/link was
+    // visible, not that both links fit on screen together (caught live:
+    // only one of the two links was ever actually in view at once).
+    // scrollIntoView({block:'start'}) aligns tryit's own top edge with
+    // the viewport's own top, so the whole (short) div -- both links --
+    // lands in view as one unit, regardless of how long the log above
+    // it has grown. Still scrolls to the page bottom while merely
+    // following the streaming log (tryit not shown yet).
+    if (shown) tryit.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     if (s.status !== 'running') { clearInterval(poll); btn.disabled = false; }
   }, 1000);
 };

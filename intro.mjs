@@ -79,20 +79,33 @@ async function renderCatalog () {
   }
 
   for (const j of jobs) {
-    // csr: a plain link to the local bridge, opened in a new tab -- see
-    // this file's own header comment above for why this sidesteps CORS
-    // entirely instead of needing it handled. BRIDGE_URL is the one
-    // thing a demo visitor's own bridge is expected to already be
-    // listening on by default (tg/ja/public/jr/bridge.mjs's own
-    // BRIDGE_PORT, unset by anyone who hasn't deliberately overridden
-    // it) -- there's no way for this page to discover a different port
-    // a specific visitor's own bridge might be using instead.
-    const [href, linkAttrs] = j.name === 'CSR'
-      ? [BRIDGE_URL, " target='_blank'"]
-      : [`/ja?${new URLSearchParams({ assetCode: j.name, issuerPk: j.issuerPk, description: j.desc ?? '' })}`, '']
+    // Every link opens in its own tab, always -- not just csr's own
+    // (ccddh.md's "a dedicated page per test case" round): this page's
+    // own JS keeps running and polling nothing, so there's no pagehide-
+    // triggered cleanup risk here the way bridge.mjs's own links had,
+    // but trying more than one Job at once (echo in one tab, calc in
+    // another) only works at all if neither navigation ever replaces
+    // this catalog page out from under the other.
+    //
+    // csr: a plain link to the local bridge -- see this file's own
+    // header comment above for why this sidesteps CORS entirely instead
+    // of needing it handled. BRIDGE_URL is the one thing a demo
+    // visitor's own bridge is expected to already be listening on by
+    // default (tg/ja/public/jr/bridge.mjs's own BRIDGE_PORT, unset by
+    // anyone who hasn't deliberately overridden it) -- there's no way
+    // for this page to discover a different port a specific visitor's
+    // own bridge might be using instead.
+    //
+    // Every other Job now gets its own dedicated page (/echo, /calc, ...
+    // -- ccddh.md's own round) instead of one shared /ja?assetCode=,
+    // with just ?issuerPk=&description= left to pass through -- which
+    // asset this is is now the page's own, not a query param.
+    const href = j.name === 'CSR'
+      ? BRIDGE_URL
+      : `/${j.name.toLowerCase()}?${new URLSearchParams({ issuerPk: j.issuerPk, description: j.desc ?? '' })}`
     out(`<div class='job-card'>
       <b>${j.name}</b> -- ${j.desc ?? '(no description given)'}
-      <br/><a href='${href}'${linkAttrs}>Try this one</a>
+      <br/><a href='${href}' target='_blank'>Try this one</a>
     </div>`)
   }
 }

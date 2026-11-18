@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>echo -- Toll-Gated Jobs</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+<div id='div1'>
+    <h3>Toll-Gated Job session: echo</h3>
+<p>
+This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
+real Stellar trade for the whole session, gets matched with whichever Agent sells this echo
+cheapest right now over WebSocket, then lets you chat with it -- as many messages as you like, all
+on that one trade -- and submits the Proof of Delivery once you end the session.
+</p>
+<p>
+Type a plain message and it echoes it back exactly. Type real arithmetic instead (e.g.
+<code>17*23</code>, not "what's 17 times 23?" -- only the first looks enough like arithmetic to
+act on) and watch for a reply that's just the number, <code>391</code>: a plain heuristic
+recognized the input, paid a separate Job (<a href='/calc' target='_blank'>calc</a>, in real
+crypto, over this same Toll Gate -- opens in its own tab) for the exact answer, and relayed it
+back. If you're matched against the real Owner, this is deterministic every time; if a demo
+visitor's own transient identity happens to be cheaper right now, it's that same mechanism running
+on their own self-issued or resold inventory instead -- either way, the page tells you which once
+you're matched.
+</p><hr/>
+<form id='chatForm'>
+  <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />
+  <button type='submit' id='sendBtn' disabled>Send</button>
+  <button type='button' id='endBtn' disabled>End Session</button>
+</form>
+<hr/>
+<p id='content1'>
+</p>
+</div>
+  </body>
+  <script type="text/javascript">

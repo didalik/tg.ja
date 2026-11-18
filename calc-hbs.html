@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>calc -- Toll-Gated Jobs</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+<div id='div1'>
+    <h3>Toll-Gated Job session: calc</h3>
+<p>
+This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
+real Stellar trade for the whole session, gets matched with JA2's real <code>calc</code> Job over
+WebSocket, then lets you chat with it -- as many messages as you like, all on that one trade -- and
+submits the Proof of Delivery once you end the session.
+</p>
+<p>
+Type any arithmetic expression (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>,
+parens) and hit Send -- it answers exactly, every time. This is the same Job a demo visitor's own
+<a href='/echo' target='_blank'>echo</a> pays, in real crypto, whenever a request to it looks like
+plain arithmetic instead of a message -- opens in its own tab, so trying one never loses the
+other's own live session.
+</p><hr/>
+<form id='chatForm'>
+  <input type='text' id='chatInput' placeholder="Type an expression, e.g. 2 + 3 * 4..." autocomplete='off' disabled style='width:60%' />
+  <button type='submit' id='sendBtn' disabled>Send</button>
+  <button type='button' id='endBtn' disabled>End Session</button>
+</form>
+<hr/>
+<p id='content1'>
+</p>
+</div>
+  </body>
+  <script type="text/javascript">

@@ -8,7 +8,8 @@ node_modules/
 # KOT {{{1
 *.log
 intro.html
-ja.html
+calc.html
+echo.html
 
 # npm {{{1
 package-lock.json
