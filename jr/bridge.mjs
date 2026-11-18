@@ -71,6 +71,13 @@ import { requestPeer } from './request-peer.mjs'
 const BROKER_PORT = Number(process.env.SH_BROKER_PORT ?? 8793) // {{{1
 const BRIDGE_PORT = Number(process.env.BRIDGE_PORT ?? 8099)
 const WS_URL = process.env.TG_WS_URL ?? 'wss://qa.ws.tg.kloudoftrust.org/jr'
+// Not derivable from WS_URL -- qa.ja.tg.kloudoftrust.org (the intro page's
+// own Worker, which proxies its own WS upgrades through to K2WS
+// internally) and qa.ws.tg.kloudoftrust.org (this file's own direct,
+// bypass-tg/ja connection target) are two different domains entirely.
+// Only used to build the "try it now" links on PITCH_HTML's own done
+// state below -- never fetched from, so no CORS concern either way.
+const JA_PAGE_URL = process.env.JA_PAGE_URL ?? 'https://qa.ja.tg.kloudoftrust.org'
 const DEMO_CERT_EMAIL = process.env.DEMO_CERT_EMAIL ?? 'demo@kloudoftrust.org'
 const MATCH_TIMEOUT_MS = Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000)
 const GRANT_TIMEOUT_MS = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS) : undefined
@@ -438,6 +445,16 @@ async function cleanup (session) { // {{{1
 process.on('SIGINT', () => { cleanup(currentSession).then(() => process.exit(0)); })
 process.on('SIGTERM', () => { cleanup(currentSession).then(() => process.exit(0)); })
 
+// Resolved once, eagerly, at startup -- not per-request, and not via a
+// client-side fetch to a cross-origin /jobs (this page is served from
+// localhost, qa.ja.tg.kloudoftrust.org is a different origin, and
+// there's no reason to assume that endpoint sets permissive CORS headers
+// just because this happens to need it now). A plain Node fetch from
+// this process has no such concern -- same issuerPkOf() runJoinFlow()
+// already calls, just called once more, here, before PITCH_HTML needs
+// it baked in.
+const ownerPk = await issuerPkOf('CSR')
+
 //const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"> // {{{1
 const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Become a Job Agent</title></head><body style="font-family: sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em">
@@ -449,14 +466,34 @@ live, it's cleaned up automatically within ${Math.round(SESSION_TTL_MS / 60_000)
 latest, whether this ends cleanly or not.</p>
 <button id="go" style="font-size: 1.2em; padding: 0.5em 1em">Join now</button>
 <pre id="log" style="background:#111;color:#0f0;padding:1em;white-space:pre-wrap;min-height:4em"></pre>
+<div id="tryit" style="display:none; margin-top: 1em;">
+  <p><b>Try it now:</b></p>
+  <p><a id="ownEcho" href="#">Chat with your own echo &rarr;</a> -- the one you just stood up,
+  self-issued, delegates real arithmetic to JA2's own calc Job.</p>
+  <p><a id="ownerEcho" href="#">Request the Owner's echo again &rarr;</a> -- notice it's cheaper
+  than before: that's your own new identity undercutting it, live.</p>
+</div>
 <script>
 const btn = document.getElementById('go'), log = document.getElementById('log');
+const tryit = document.getElementById('tryit');
+let shown = false; // tryit is shown once per session, not re-toggled on every 1s poll tick
 btn.onclick = async () => {
   btn.disabled = true;
+  shown = false;
+  tryit.style.display = 'none';
   await fetch('/join', { method: 'POST' });
   const poll = setInterval(async () => {
     const s = await (await fetch('/status')).json();
     log.textContent = s.log.join('\\n');
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    if (s.status === 'done' && s.pk && !shown) {
+      shown = true;
+      document.getElementById('ownEcho').href =
+        '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: s.pk });
+      document.getElementById('ownerEcho').href =
+        '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: '${ownerPk}' });
+      tryit.style.display = 'block';
+    }
     if (s.status !== 'running') { clearInterval(poll); btn.disabled = false; }
   }, 1000);
 };

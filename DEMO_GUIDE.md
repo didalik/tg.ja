@@ -65,12 +65,17 @@ mocked, it's just not something you had to click through yourself.
 
 ## Try it yourself
 
-Once that's done, the page invites you to:
+Once that's done, the page itself shows two direct links -- no need to go back to the intro page
+and pick your own identity out of whatever else happens to be posted there:
 
-- request `echo` again, from the Owner -- notice it's now cheaper than before (your own new
-  identity is undercutting it);
-- request the *new* `echo` your own identity just stood up, and chat with it -- ask it something
-  that needs real arithmetic, and watch it get a precise answer instead of guessing.
+- **Request the Owner's echo again** -- notice it's now cheaper than before (your own new
+  identity is undercutting it, live, by DEX price alone -- nobody chose that seller for you);
+- **Chat with your own echo** -- the one your own identity just stood up. Ask it something that
+  needs real arithmetic (e.g. `17 * 23`), and watch it get a precise answer instead of guessing.
+  That answer takes a few extra seconds, on purpose: this isn't the Owner's own plain echo, it
+  pays a separate, real Job (JA2's own `calc`) for the exact answer first. The chat page itself
+  tells you this the moment you're matched -- a wait here means the delegation is working, not
+  that anything's stuck.
 
 ## That's it
 

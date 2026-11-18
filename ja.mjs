@@ -197,6 +197,20 @@ async function main () { // {{{1
   out(aud === 'calc'
     ? "Matched -- type an arithmetic expression below and hit Send, e.g. '2 + 3 * 4'. One gate trade pays for the whole session."
     : 'Matched -- type a message below and hit Send. One gate trade pays for the whole session.')
+  // ECHO matched against a reseller, not the real issuer, means this is
+  // a visitor's own sh-kind echo (tg/sh/jobs/echo/echo.mjs) -- either
+  // their own resale of the Owner's inventory or their own self-issued
+  // one, both the same handler. Unlike the Owner's own ja-kind echo
+  // (tg/ja/jobs/echo/'s plain cat, never delegates), this one pays
+  // JA2's real calc Job for exact arithmetic -- a real, separate gate
+  // trade + WS match happening invisibly, a few extra seconds a
+  // first-time visitor has no way to otherwise know is coming rather
+  // than a stall. window.process.env.JA_PK was set by connectAndMatch()'s
+  // own last successful buyGrant() call, from that trade's real
+  // counterparty.
+  if (aud === 'echo' && window.process.env.JA_PK !== issuerPk) {
+    out('(heads up: this isn\'t the Owner\'s own echo -- if you ask it real arithmetic, it pays a separate, real Job for the exact answer, which takes a few extra seconds. That\'s the delegation working, not lag.)')
+  }
 
   // Disabled by default in the markup (nothing to type into until
   // matched) -- enable now that there's actually a session to chat in.

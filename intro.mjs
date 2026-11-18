@@ -1,5 +1,16 @@
 import { put, reset, } from './lib/util.mjs' // {{{1
 
+// Same local wrapper ja.mjs's own `out` already has (tg/ja/public/lib/
+// util.mjs's own put() stays the simpler, no-scroll copy on purpose --
+// see ja.mjs's own header note) -- the catalog renders one card per Job
+// in a loop below, which can grow past the viewport on a longer list,
+// same reasoning either page has for not leaving new content to scroll
+// to manually.
+const out = m => {
+  put(m)
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+}
+
 reset({ content: document.getElementById('content1'), })
 
 // ja.mjs's own flow is generic on purpose -- one gate trade, then a plain
@@ -58,12 +69,12 @@ async function renderCatalog () {
   const jobsUrl = `${location.origin}/jobs`
   const res = await fetch(jobsUrl)
   if (!res.ok) {
-    put(`<p>Couldn't reach the Jobs list (${jobsUrl} -> ${res.status}).</p>`)
+    out(`<p>Couldn't reach the Jobs list (${jobsUrl} -> ${res.status}).</p>`)
     return;
   }
   const jobs = (await res.json()).filter(j => !BROWSER_UNSUPPORTED.has(j.name))
   if (jobs.length === 0) {
-    put('<p>No Jobs posted right now -- check back later.</p>')
+    out('<p>No Jobs posted right now -- check back later.</p>')
     return;
   }
 
@@ -79,7 +90,7 @@ async function renderCatalog () {
     const [href, linkAttrs] = j.name === 'CSR'
       ? [BRIDGE_URL, " target='_blank'"]
       : [`/ja?${new URLSearchParams({ assetCode: j.name, issuerPk: j.issuerPk, description: j.desc ?? '' })}`, '']
-    put(`<div class='job-card'>
+    out(`<div class='job-card'>
       <b>${j.name}</b> -- ${j.desc ?? '(no description given)'}
       <br/><a href='${href}'${linkAttrs}>Try this one</a>
     </div>`)
@@ -88,6 +99,6 @@ async function renderCatalog () {
 
 renderCatalog().catch(e => { // {{{1
   console.error('renderCatalog FAILED', e)
-  put(`<p>FAILED to load the job catalog: ${e.message}</p>`)
+  out(`<p>FAILED to load the job catalog: ${e.message}</p>`)
 })
 
