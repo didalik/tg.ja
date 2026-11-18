@@ -10,6 +10,8 @@ node_modules/
 intro.html
 calc.html
 echo.html
+own-echo.html
+owner-echo.html
 
 # npm {{{1
 package-lock.json

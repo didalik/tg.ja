@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>the Owner's echo, again -- Toll-Gated Jobs</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+<div id='div1'>
+    <h3>Toll-Gated Job session: the Owner's echo, again</h3>
+<p>
+This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
+real Stellar trade for the whole session, gets matched with whichever Agent sells this exact echo
+cheapest right now over WebSocket, then lets you chat with it -- as many messages as you like, all
+on that one trade -- and submits the Proof of Delivery once you end the session.
+</p>
+<p>
+Same echo you could already try straight from the <a href='/' target='_blank'>intro page</a>, but
+asked again right after joining -- notice it's cheaper than before: your own new identity is
+undercutting the real Owner's own price, live, so Stellar's own DEX routes this trade to whichever
+of you is currently cheapest, not necessarily the real Owner any more. If you land on your own
+identity instead, it pays a separate, real Job (<a href='/calc' target='_blank'>calc</a>) for exact
+arithmetic rather than guessing -- the page tells you which once you're matched, and a few extra
+seconds there means that delegation is working, not that anything's stuck.
+</p><hr/>
+<form id='chatForm'>
+  <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />
+  <button type='submit' id='sendBtn' disabled>Send</button>
+  <button type='button' id='endBtn' disabled>End Session</button>
+</form>
+<hr/>
+<p id='content1'>
+</p>
+</div>
+  </body>
+  <script type="text/javascript">

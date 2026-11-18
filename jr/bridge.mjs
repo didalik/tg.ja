@@ -514,11 +514,11 @@ btn.onclick = async () => {
       // without it already having succeeded.
       if (s.ownEchoLive) {
         document.getElementById('ownEcho').href =
-          '${JA_PAGE_URL}/echo?' + new URLSearchParams({ issuerPk: s.pk });
+          '${JA_PAGE_URL}/own-echo?' + new URLSearchParams({ issuerPk: s.pk });
         document.getElementById('ownEchoP').style.display = 'block';
       }
       document.getElementById('ownerEcho').href =
-        '${JA_PAGE_URL}/echo?' + new URLSearchParams({ issuerPk: '${ownerPk}' });
+        '${JA_PAGE_URL}/owner-echo?' + new URLSearchParams({ issuerPk: '${ownerPk}' });
       tryit.style.display = 'block';
     }
     // Once tryit is showing, scroll to *it* specifically, not to the
