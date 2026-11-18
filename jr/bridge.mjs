@@ -479,10 +479,17 @@ latest, whether this ends cleanly or not.</p>
 <button id="go" style="font-size: 1.2em; padding: 0.5em 1em">Join now</button>
 <pre id="log" style="background:#111;color:#0f0;padding:1em;white-space:pre-wrap;min-height:4em"></pre>
 <div id="tryit" style="display:none; margin-top: 1em;">
+  <!-- Both links below target="_blank" -- a plain same-tab navigation away
+       from this page fires its own pagehide handler (see window.addEventListener
+       below), sending /leave and tearing down the very session these links
+       exist to let the visitor keep using. Caught live: every single click
+       killed its own target identity immediately, regardless of SESSION_TTL_MS's
+       own value, which looked like a timing bug but never was one. intro.mjs's
+       own csr link already knew to do this; these two just never matched it. -->
   <p><b>Try it now:</b></p>
-  <p id="ownEchoP" style="display:none;"><a id="ownEcho" href="#">Chat with your own echo &rarr;</a>
+  <p id="ownEchoP" style="display:none;"><a id="ownEcho" href="#" target="_blank">Chat with your own echo &rarr;</a>
   -- the one you just stood up, self-issued, delegates real arithmetic to JA2's own calc Job.</p>
-  <p><a id="ownerEcho" href="#">Request the Owner's echo again &rarr;</a> -- notice it's cheaper
+  <p><a id="ownerEcho" href="#" target="_blank">Request the Owner's echo again &rarr;</a> -- notice it's cheaper
   than before: that's your own new identity undercutting it, live.</p>
 </div>
 <script>
