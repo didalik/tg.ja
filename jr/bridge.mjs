@@ -485,7 +485,6 @@ btn.onclick = async () => {
   const poll = setInterval(async () => {
     const s = await (await fetch('/status')).json();
     log.textContent = s.log.join('\\n');
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     if (s.status === 'done' && s.pk && !shown) {
       shown = true;
       document.getElementById('ownEcho').href =
@@ -494,6 +493,14 @@ btn.onclick = async () => {
         '${JA_PAGE_URL}/ja?' + new URLSearchParams({ assetCode: 'ECHO', issuerPk: '${ownerPk}' });
       tryit.style.display = 'block';
     }
+    // Scrolls *after* tryit's own display is set, not before -- scrollTo's
+    // own document.body.scrollHeight is measured at call time, so doing
+    // this first measured the page as it was before the links div went
+    // visible, scrolling to the bottom of the log while the actual new
+    // content (the two links) sat just below the fold, out of view. Caught
+    // live: a real visitor's own links rendered correctly, pointed at the
+    // right pk, and were simply never scrolled into view.
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     if (s.status !== 'running') { clearInterval(poll); btn.disabled = false; }
   }, 1000);
 };
