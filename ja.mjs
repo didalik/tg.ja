@@ -87,6 +87,19 @@ const MAX_ATTEMPTS = 3 // {{{1
 // more covers the unlikely case of a couple dying in close succession.
 // A persistent failure past that is treated as real, not retried forever.
 
+const GRANT_TIMEOUT_MS = 30_000 // {{{1
+// Caught live: a visitor clicked bridge.mjs's own "chat with your own
+// echo" link after its session's own TTL had already expired (self-
+// issued/resold identities retract their own offer on a clean shutdown)
+// -- buyGrant() has no timeout of its own by default (daeh's own "wait
+// forever" posture, same as db's original tm.js), so the buy offer just
+// sat there, unfillable, forever, with no error and no way out short of
+// reloading. This gives it the same bound matchTimeoutMs already has --
+// buyGrant() itself already cancels the stale buy offer cleanly on
+// timeout, this only had to be wired up. Not retried on timeout, unlike
+// a match timeout: a fresh attempt's own trade would target the exact
+// same (still-dead) identity, so retrying here can't ever help.
+
 //async function connectAndMatch (wsUrl, assetCode, issuerPk, aud) {{{1
 /** The gate trade + WS Match, retried on a match timeout only (see
  * isMatchTimeout() above). Each attempt is a genuinely fresh one -- new
@@ -117,7 +130,12 @@ async function connectAndMatch (wsUrl, assetCode, issuerPk, aud) {
     window.process.env.TG_JR_SK = sk
 
     const actor = { app: 'jr', iss: { name: 'jr', pk }, sk, WebSocket, wsArgs: [wsUrl] }
-    const requesterKp = await buyGrant(line => out(`gate: ${line}`))
+    let requesterKp
+    try {
+      requesterKp = await buyGrant(line => out(`gate: ${line}`), GRANT_TIMEOUT_MS)
+    } catch (err) {
+      throw new Error(`that identity's own offer never filled -- its disposable session may have already ended. Go back and start a fresh one. (${err.message})`)
+    }
     const seller = window.process.env.JA_PK === window.process.env.JI_PK ? 'issuer' : 'reseller'
     out(`gate granted by ${seller}`)
 
