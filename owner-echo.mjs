@@ -10,7 +10,7 @@ import { runChatSession } from './lib/chat-session.mjs'
 
 runChatSession({
   assetCode: 'ECHO',
-  label: 'Echo',
+  label: 'echo',
   matchedMessage: 'Matched -- type a message and hit Send.',
   showDelegationHeadsUp: true,
 })

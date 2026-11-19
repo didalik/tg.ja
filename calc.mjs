@@ -10,7 +10,7 @@ import { runChatSession } from './lib/chat-session.mjs'
 
 runChatSession({
   assetCode: 'CALC',
-  label: 'Calc',
+  label: 'calc',
   matchedMessage: "Matched -- type an arithmetic expression and hit Send, e.g. '2 + 3 * 4'.",
   discoverIssuerFromJobs: true,
 })
