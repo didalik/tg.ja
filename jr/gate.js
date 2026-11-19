@@ -122,12 +122,15 @@ export async function payBack (kp) {
  * happens to be cheapest right now fills it, not necessarily JI_PK
  * itself) now has the real seller's own PK afterward too, for payBack
  * and for pinning the WS Match (targetPk) to that exact Agent. Sets
- * process.env.JA_PRICE the same way, from the same effect's own
+ * process.env.TRADE_PRICE the same way, from the same effect's own
  * `sold_amount` (this account's own side of the trade is always the
  * XLM leg, since it's the one buying the gate asset) -- the actual XLM
  * paid, which can land below the standing offer's own `price()` limit
- * whenever a cheaper reseller's resting sell crosses it; callers that
- * only know the asking price going in now have the real figure too. */
+ * whenever a cheaper reseller's resting sell crosses it. Named for
+ * *which side's own resting offer set it*, not for who it's paid to --
+ * ordinarily the Agent's own resting sell, but if this Requester's own
+ * buy happens to land in the order book first instead, a later-arriving
+ * Agent crosses it at the price *this side* set, not its own. */
 export async function buyGrant (
   onLog = () => {}, 
   grantTimeoutMs = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS)
@@ -167,7 +170,7 @@ export async function buyGrant (
         // on it is unambiguously this offer filling, no amount check needed.
         if (effect.type !== 'trade') return;
         process.env.JA_PK = effect.seller
-        process.env.JA_PRICE = effect.sold_amount
+        process.env.TRADE_PRICE = effect.sold_amount
         onLog('grant confirmed -- trade filled')
         finish(resolve, kp);
       },
@@ -179,7 +182,7 @@ export async function buyGrant (
     // just via a different mechanism -- this covers it regardless of cause).
     const stopPoll = pollForTrade(kp.publicKey(), since, () => true, effect => {
       process.env.JA_PK = effect.seller
-      process.env.JA_PRICE = effect.sold_amount
+      process.env.TRADE_PRICE = effect.sold_amount
       onLog('grant confirmed -- trade filled [via poll fallback]')
       finish(resolve, kp);
     })

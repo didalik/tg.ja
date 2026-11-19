@@ -106,7 +106,7 @@ async function main () { // {{{1
   if (process.env.JI_PK) {
     requesterKp = await buyGrant(line => console.log('[jr] gate:', line))
     const seller = process.env.JA_PK == process.env.JI_PK ? 'issuer' : 'reseller'
-    console.log(`[jr] gate granted by ${seller} -- paid ${process.env.JA_PRICE} XLM`)
+    console.log(`[jr] gate granted by ${seller} -- paid ${process.env.TRADE_PRICE} XLM`)
   } else {
     console.log('[jr] JI_PK not set -- gating skipped (dev/test only)')
   }
