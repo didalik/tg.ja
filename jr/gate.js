@@ -171,7 +171,6 @@ export async function buyGrant (
         if (effect.type !== 'trade') return;
         process.env.JA_PK = effect.seller
         process.env.TRADE_PRICE = effect.sold_amount
-        onLog('grant confirmed -- trade filled')
         finish(resolve, kp);
       },
       onerror: err => finish(reject, err),
@@ -183,7 +182,7 @@ export async function buyGrant (
     const stopPoll = pollForTrade(kp.publicKey(), since, () => true, effect => {
       process.env.JA_PK = effect.seller
       process.env.TRADE_PRICE = effect.sold_amount
-      onLog('grant confirmed -- trade filled [via poll fallback]')
+      console.log('buyGrant(): trade filled via poll fallback, not the SSE stream') // the SSE stream's own known flakiness (see its own comment above) -- diagnostic only, never shown to the end user
       finish(resolve, kp);
     })
 
@@ -194,7 +193,7 @@ export async function buyGrant (
         .finally(() => finish(reject, new Error(`buyGrant(): no fill within ${grantTimeoutMs}ms`)))
     }, grantTimeoutMs)
 
-    onLog(`buying 1 ${assetCode()} for ${price()} XLM (${kp.publicKey()})`)
+    onLog(`${kp.publicKey()} buying 1 ${assetCode()} for ${price()} XLM`)
     buy(kp, asset).catch(err => finish(reject, err))
   }); // }}}2
 }

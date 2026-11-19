@@ -11,5 +11,5 @@ import { runChatSession } from './lib/chat-session.mjs'
 runChatSession({
   assetCode: 'ECHO',
   label: 'Echo',
-  matchedMessage: 'Matched -- type a message below and hit Send. One gate trade pays for the whole session.',
+  matchedMessage: 'Matched -- type a message and hit Send.',
 })

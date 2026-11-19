@@ -11,6 +11,6 @@ import { runChatSession } from './lib/chat-session.mjs'
 runChatSession({
   assetCode: 'CALC',
   label: 'Calc',
-  matchedMessage: "Matched -- type an arithmetic expression below and hit Send, e.g. '2 + 3 * 4'. One gate trade pays for the whole session.",
+  matchedMessage: "Matched -- type an arithmetic expression and hit Send, e.g. '2 + 3 * 4'.",
   discoverIssuerFromJobs: true,
 })
