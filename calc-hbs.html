@@ -2,29 +2,36 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>calc -- Toll-Gated Jobs</title>
+    <title>calc -- the KoT Jobs</title>
     <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
 <div id='div1'>
-    <h3>Toll-Gated Job session: calc</h3>
+    <h3>Running the KoT Job: calc</h3>
 <p>
-This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
-real Stellar trade for the whole session, gets matched with JA2's real <code>calc</code> Job over
-WebSocket, then lets you chat with it -- as many messages as you like, all on that one trade -- and
-submits the Proof of Delivery once you end the session.
+
+Each <a href='/' target='_blank'>KoT Job Request</a> takes 6 steps to complete:
+<ol>
+  <li>Trust the Job Asset (A)</li>
+  <li>Buy 1 unit of A for XLM</li>
+  <li>Get the grant (on trade, PoP)</li>
+  <li>Match the JR with a JA</li>
+  <li>Relay the messages between JR and JA (start the Job)</li>
+  <li>Produce PoD to stop the Job gracefully</li>
+</ol>
 </p>
 <p>
 Type any arithmetic expression (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>,
-parens) and hit Send -- it answers exactly, every time.
-</p><hr/>
+parens) and hit Send -- it answers exactly, every time. The reason for this Job to exist is
+that it is called by another Job, <b>own-echo</b>, which you will "implement" yourself once
+you join as a demo JA via the <b>CSR</b> Job from the home page.
+</p>
 <form id='chatForm'>
   <input type='text' id='chatInput' placeholder="Type an expression, e.g. 2 + 3 * 4..." autocomplete='off' disabled style='width:60%' />
   <button type='submit' id='sendBtn' disabled>Send</button>
   <button type='button' id='endBtn' disabled>Stop Job</button>
 </form>
-<hr/>
 <p id='content1'>
 </p>
 </div>
