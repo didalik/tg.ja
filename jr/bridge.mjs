@@ -532,7 +532,7 @@ Joining the <a href='/' target='_blank'>KoT</a> takes 4 steps to complete:
   <li>Request <b>buyInvite</b> Job from a JI (JA2 in the demo)</li>
   <li>Request <b>CSR</b> Job from the Owner</li>
   <li>Request <b>SELL</b> Job from the Owner</li>
-  <li>Request <b>PEER</b> Job from a JI (JA2 in the demo)</li>
+  <li>Request <b>PEER</b> Job from the Owner</li>
 </ol>
 This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
 the Owner's own <code>echo</code> Job at half its price, and spins up your own live <code>echo</code>
