@@ -174,6 +174,16 @@ async function halfOfOwnersPrice (ownerPk, assetCode) {
  * that point would never be visited by anything and would leak forever
  * -- caught live: the TTL fired mid-flow, the flow carried on anyway and
  * spawned two echoes afterward, and nothing ever stopped them. */
+// Child run.js's own startup noise (gate trusting/buying, raw onEvent
+// lifecycle, "waiting for a matched request...", the /jobs POST
+// confirmation) -- same reasoning as curatedLog() above, just for the
+// spawned Agent's own stdout instead of a reused JR-side helper's
+// onLog. "gate selling" is the one line spawnJob() itself watches for
+// to know the offer is actually live -- translated into the
+// confirmation a demo visitor would actually want, instead of passed
+// through raw. Stderr is untouched -- a real crash should always be
+// visible as-is. {{{1
+const SPAWN_NOISE = /^\[sh:\S+\] (onEvent|gate (trusting|closed)|gate \S+ buying|waiting for a matched request|posted |SH_DESCRIPTION not set)/
 function spawnJob (label, shSnapshotDir, session, env) {
   return new Promise((resolve, reject) => {
     const child = nodeSpawn('node', ['../run.js'], {
@@ -185,7 +195,13 @@ function spawnJob (label, shSnapshotDir, session, env) {
     let settled = false
     child.stdout.on('data', chunk => {
       const text = chunk.toString()
-      for (const line of text.split('\n')) if (line.trim()) log(`[${label}] ${line.trim()}`);
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        console.log(`[bridge:${label}]`, line.trim())
+        if (SPAWN_NOISE.test(line)) continue;
+        if (/gate selling/.test(line)) { log(`[${label}] now live and selling`); continue; }
+        log(`[${label}] ${line.trim()}`);
+      }
       if (!settled && text.includes('gate selling')) { settled = true; resolve(); }
     })
     child.stderr.on('data', chunk => {
@@ -237,6 +253,45 @@ function spawnOwnEcho ({ kp, shSnapshotDir, session }) {
   });
 }
 
+//function curatedLog (step) {{{1
+/** Wraps log() for one of the 4 steps PITCH_HTML's own list shows, to use
+ * as a reused helper's own onLog -- requestBuyInvite()/csrAndWait()/
+ * sellAndWait()/requestPeer() (and gate.js's own buyGrant(), which all
+ * four call internally) each log plenty of real, individually-accurate
+ * detail (raw Stellar pk's, "trusting X:Y", "gate grant confirmed on
+ * X", raw Agent-reply JSON, PoD-TXIDs) that's meaningless noise to a
+ * demo visitor just trying to follow "which of the 4 steps am I on" --
+ * caught live, that visible log was effectively gibberish, completely
+ * disconnected from the numbered list right above it. Only the couple
+ * of lines that explain a real, potentially long wait (a human
+ * reviewing a request) or confirm genuine progress get rephrased and
+ * shown, numbered to match; everything else still reaches console.log,
+ * for whoever's actually debugging this, just not the visitor's own
+ * screen. */
+function curatedLog (step) {
+  return line => {
+    console.log(`[bridge:${step}]`, line)
+    if (/^queued as .+ -- waiting for .+ to approve or reject\.\.\.$/.test(line)) {
+      log(`[${step}] waiting for a human to approve your request...`); return;
+    }
+    const approved = line.match(/^approved -- received (.+)$/)
+    if (approved) { log(`[${step}] approved -- got real ${approved[1]} to resell`); return; }
+    if (/^no fill within \d+ms/.test(line)) { log(`[${step}] nobody filled this trade in time`); return; }
+    if (/^connected, waiting to be matched with E\.\.\.$/.test(line)) {
+      log(`[${step}] connecting to the Owner's own machine...`); return;
+    }
+    if (/^retrieving staged content from /.test(line)) {
+      log(`[${step}] retrieving the Owner's own working snapshot...`); return;
+    }
+    if (/^job error: /.test(line)) { log(`[${step}] ${line}`); return; }
+    // "retrieved content verified locally: ..." is deliberately not
+    // translated here -- runJoinFlow()'s own "[4/4] retrieved and
+    // verified" line, right after requestPeer() returns, already says
+    // this; translating this one too just showed the same fact twice
+    // in a row (caught live).
+  };
+}
+
 //async function runJoinFlow () {{{1
 /** The whole sequence, dqad.md's steps 5-9, start to finish. */
 async function runJoinFlow () {
@@ -271,7 +326,7 @@ async function runJoinFlow () {
     const ja2Pk = await issuerPkOf('CALC')
     const ownerPk = await issuerPkOf('CSR')
 
-    log('requesting an invite from JA2...')
+    log('[1/4] requesting buyInvite from JA2...')
     // delete, not just "let it default": requestBuyInvite()/csrAndWait()/
     // sellAndWait() each do process.env.TG_ASSET_CODE ??= '<their own
     // default>' -- correct for each one's original design (always run as
@@ -284,12 +339,12 @@ async function runJoinFlow () {
     delete process.env.TG_ASSET_CODE
     const inviteReply = await requestBuyInvite({
       kp, ja2Pk, expiry: new Date(Date.now() + 3_600_000).toISOString(),
-      wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: log,
+      wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: curatedLog('1/4'),
     })
     if (!inviteReply.invite) throw new Error(`invite denied: ${inviteReply.message}`);
-    log('got a real, signed invite')
+    log('[1/4] got a real, signed invite')
 
-    log('generating a CSR and requesting a certificate...')
+    log('[2/4] requesting a CSR-signed certificate from the Owner...')
     delete process.env.TG_ASSET_CODE // see the same note above
     const dir = certDirFor(pk)
     const { csr } = await generateCsr(pk, `demo-${pk.slice(0, 8)}`, dir)
@@ -302,7 +357,7 @@ async function runJoinFlow () {
     await csrAndWait({
       kp, ownerPk, wsUrl: WS_URL, csr, email: DEMO_CERT_EMAIL,
       invite: inviteReply.invite, paymentTx: inviteReply.paymentTx,
-      matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: log,
+      matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: curatedLog('2/4'),
     })
     // generateCsr()/storeCert() (the latter inside csrAndWait() above)
     // are the only other writers of the local files cleanup() removes
@@ -315,13 +370,13 @@ async function runJoinFlow () {
     // it here is a plain, idempotent re-removal, not a second "cleaned"
     // transition.
     if (session.cleaned) await cleanupLocalFiles(pk);
-    log('you are now, briefly, a real Job Agent')
+    log('[2/4] certificate issued -- you are now, briefly, a real Job Agent')
 
-    log('buying the Owner\'s own echo inventory to resell...')
+    log('[3/4] requesting to resell the Owner\'s own echo inventory...')
     delete process.env.TG_ASSET_CODE // see the same note above
     await sellAndWait({
       kp, jiPk: ownerPk, issuerPk: ownerPk, assetCode: 'ECHO',
-      wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: log,
+      wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, onLog: curatedLog('3/4'),
     })
     // sellAndWait() -> sell.mjs's own requestSell() sets process.env.JI_PK =
     // jiPk as a side effect and never unsets it (correct for its own
@@ -333,14 +388,14 @@ async function runJoinFlow () {
     // ECHO:<Owner's PK> on Horizon, not two distinct assets.
     delete process.env.JI_PK
     const price = await halfOfOwnersPrice(ownerPk, 'ECHO')
-    log(`got real echo inventory -- reselling at ${price} XLM`)
+    log(`[3/4] will resell it at ${price} XLM`)
 
-    log('buying peer access, to retrieve a working copy of sh...')
+    log('[4/4] requesting peer access to retrieve a working copy of sh...')
     const shSnapshotDir = path.join(os.tmpdir(), `bridge-${pk.slice(0, 8)}`, 'sh-received')
     await requestPeer({
-      kp, issuerPk: ownerPk, wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, destDir: shSnapshotDir, onLog: log,
+      kp, issuerPk: ownerPk, wsUrl: WS_URL, matchTimeoutMs: MATCH_TIMEOUT_MS, destDir: shSnapshotDir, onLog: curatedLog('4/4'),
     })
-    log('retrieved and verified')
+    log('[4/4] retrieved and verified')
 
     log('starting your resale of the Owner\'s own echo...')
     await spawnResaleEcho({ kp, ownerPk, price, shSnapshotDir, session })
@@ -471,7 +526,15 @@ const ownerPk = await issuerPkOf('CSR')
 const PITCH_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Become a Job Agent</title></head><body style="font-family: sans-serif; max-width: 640px; margin: 2em auto; padding: 0 1em">
 <h2>Join the Kloud of Trust, for real</h2>
-<p>This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
+<p>
+Joining the <a href='/' target='_blank'>KoT</a> takes 4 steps to complete:
+<ol>
+  <li>Request <b>buyInvite</b> Job from a JI (JA2 in the demo)</li>
+  <li>Request <b>CSR</b> Job from the Owner</li>
+  <li>Request <b>SELL</b> Job from the Owner</li>
+  <li>Request <b>PEER</b> Job from a JI (JA2 in the demo)</li>
+</ol>
+This buys you a real invite, a real Cloudflare-issued certificate, real resellable inventory of
 the Owner's own <code>echo</code> Job at half its price, and spins up your own live <code>echo</code>
 Agent -- all real Stellar transactions, nothing mocked. Your new identity is disposable: once it's
 live, it's cleaned up automatically within ${Math.round(SESSION_TTL_MS / 60_000)} minutes at the
