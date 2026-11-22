@@ -1,16 +1,17 @@
 // tg/ja/public/owner-echo.mjs -- the dedicated page for bridge.mjs's {{{1
 // own "request the Owner's echo again" link (split out of the generic
 // /echo page, ccddh.md's "a dedicated page per test case" round, one
-// level deeper than calc/echo). Still genuinely dynamic, unlike
-// own-echo.mjs: this one's own issuerPk is always the real Owner's, but
-// which account's own offer the DEX actually fills against depends on
-// who's cheapest right now -- the real Owner, or the demo visitor's own
-// transient identity undercutting it. showDelegationHeadsUp stays true.
+// level deeper than calc/echo). This one's own issuerPk is always the
+// real Owner's, but which account's own offer the DEX actually fills
+// against depends on who's cheapest right now -- the real Owner, or
+// the demo visitor's own transient identity undercutting it.
+// showDelegationHeadsUp stays false -- the page's own copy now frames
+// this as the resale story specifically, not a "which one did I land
+// on" surprise, so the calc-delegation tangent doesn't belong here.
 import { runChatSession } from './lib/chat-session.mjs'
 
 runChatSession({
   assetCode: 'ECHO',
   label: 'echo',
   matchedMessage: 'Matched -- type a message and hit Send.',
-  showDelegationHeadsUp: true,
 })
