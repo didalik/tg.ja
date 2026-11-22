@@ -182,7 +182,17 @@ export async function buyGrant (
     const stopPoll = pollForTrade(kp.publicKey(), since, () => true, effect => {
       process.env.JA_PK = effect.seller
       process.env.TRADE_PRICE = effect.sold_amount
-      console.log('buyGrant(): trade filled via poll fallback, not the SSE stream') // the SSE stream's own known flakiness (see its own comment above) -- diagnostic only, never shown to the end user
+      // console.error, not console.log: this file also runs inside Node-
+      // spawned Agent-side handlers (askOwner(), csr.mjs, sell.mjs,
+      // request-peer.mjs) that daeh/lib/job.ts spawns as a child and
+      // relays stdout from as the job's own real output -- caught live,
+      // a console.log here got relayed as if it were the Agent's own
+      // JSON reply, corrupting it (a real "Unexpected token 'b',
+      // \"buyGrant()\"..." JSON.parse() failure on the Requester's own
+      // side). stderr is never relayed that way, only ever logged
+      // locally by job.ts itself -- diagnostic value stays, this just
+      // can never again be mistaken for real job output.
+      console.error('buyGrant(): trade filled via poll fallback, not the SSE stream')
       finish(resolve, kp);
     })
 
