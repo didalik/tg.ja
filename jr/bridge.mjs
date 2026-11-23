@@ -241,7 +241,21 @@ function spawnResaleEcho ({ kp, ownerPk, price, shSnapshotDir, session }) {
  * thing. Same jobs/echo/echo.mjs handler either way -- deterministic,
  * delegates any arithmetic in the request to JA2's own real calc Job
  * (ask-calc.mjs) -- nothing about self-issuing changes that; the gate's
- * own asset/issuer never reaches the job handler. */
+ * own asset/issuer never reaches the job handler.
+ *
+ * SH_RELAY_TIMEOUT_MS raised well past run.js's own 30s default --
+ * caught live: a real arithmetic request closed the connection with no
+ * answer, no error, just "connection closed". ask-calc.mjs's own nested
+ * gate trade (buyGrant against JA2's real CALC, its own Match, then
+ * payBack()) routinely eats 15-20s of that 30s budget by itself even
+ * when everything goes right (confirmed live, timestamped: ~19s from
+ * match to reply) -- any real hiccup on top of that (the SSE stream's
+ * own documented flakiness forcing its 5s-interval poll fallback, a
+ * slow Horizon moment) pushes the *outer* own-echo<->browser
+ * connection's own relayTimeout past its deadline before the *inner*
+ * delegation ever gets a chance to finish. Only own-echo needs this --
+ * spawnResaleEcho() above never delegates (CALC_DELEGATION is false
+ * whenever JI_PK is set, see jobs/echo/echo.mjs's own header). */
 function spawnOwnEcho ({ kp, shSnapshotDir, session }) {
   return spawnJob('own-echo', shSnapshotDir, session, {
     SH_ISSUER_SK: kp.secret(),
@@ -250,6 +264,7 @@ function spawnOwnEcho ({ kp, shSnapshotDir, session }) {
     mTLS: 'true',
     SH_BROKER_PORT: String(BROKER_PORT),
     SH_WS_URL: WS_URL.replace('/jr', '/ja'),
+    SH_RELAY_TIMEOUT_MS: '90000',
   });
 }
 
