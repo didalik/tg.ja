@@ -2,33 +2,29 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>your own echo -- Toll-Gated Jobs</title>
+    <title>your own echo -- the KoT Jobs</title>
     <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
 <div id='div1'>
-    <h3>Toll-Gated Job session: your own echo</h3>
+    <h3>the KoT Job: your own echo</h3>
 <p>
-This page is a live Job Requester (<b>jr</b>), running entirely in your browser: it places one
-real Stellar trade for the whole session, gets matched with the Job Agent <i>you</i> just stood up
-by joining a few steps ago, then lets you chat with it -- as many messages as you like, all on
-that one trade -- and submits the Proof of Delivery once you end the session.
+Here, you "implement" your own <b>ECHO</b> Job: if the input is an arithmetic expression,
+it buys the <b>CALC</b> Job to output the result; otherwise, it echoes the input back.
+Two moments worth noting:
+<ul>
+  <li>this makes your transient JA a Job Issuer (JI) -- your Job gets registered and is now visible
+    within the <a href='/' target='_blank'>KoT</a>, and JIs can invite others to become JAs
+    (JA2 presently being the only example);</li>
+  <li>your <b>ECHO</b> Job shows how KoT Jobs call each other -- note the execution delay.</li>
+</ul>
 </p>
-<p>
-This one's always your own, self-issued identity, never the real Owner's and never a different
-reseller's -- so it always pays a separate, real Job (<a href='/calc' target='_blank'>calc</a>,
-in real crypto, opens in its own tab) for an exact answer whenever your message looks like plain
-arithmetic (e.g. <code>17*23</code>, not "what's 17 times 23?") rather than guessing. Watch for a
-reply that's just the number, <code>391</code> -- that few-second wait is the delegation actually
-happening, not anything stuck.
-</p><hr/>
 <form id='chatForm'>
   <input type='text' id='chatInput' placeholder='Type a message, then hit Send...' autocomplete='off' disabled style='width:60%' />
   <button type='submit' id='sendBtn' disabled>Send</button>
   <button type='button' id='endBtn' disabled>Stop Job</button>
 </form>
-<hr/>
 <p id='content1'>
 </p>
 </div>
