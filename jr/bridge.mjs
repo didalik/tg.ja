@@ -513,14 +513,20 @@ async function cleanup (session) { // {{{1
   // signal to be sent -- that shutdown needs this identity's own cert to
   // authenticate the /jobs DELETE call, caught live getting pulled out
   // from under it (ENOENT) when this ran immediately after child.kill()
-  // instead. 15s covers its own worst case (a 5s DELETE timeout plus up
-  // to 5 1s-spaced retries in cancelOwnOffer()) with room to spare; a
-  // child that still hasn't exited by then is logged, not waited on
-  // forever.
-  const timeout = new Promise(resolve => setTimeout(resolve, 15_000))
+  // instead. 30s, not 15s (caught live: a real own-echo's own /jobs
+  // entry sat stale after a clean shutdown, needing genesis.mjs's own
+  // sweep to catch it) -- the old 15s only ever accounted for *one* of
+  // cancelOwnOffer()'s own two retry loops (the lookup, then the submit,
+  // each up to ~4s of backoff alone on top of the actual network calls),
+  // plus deleteThisJob()'s own 5s timeout after that, plus the broker's
+  // own one shared submit queue making whichever of the two spawned
+  // children (resale, own-echo) goes second wait on the first's own
+  // in-flight submit too. A child that still hasn't exited by 30s is
+  // logged, not waited on forever.
+  const timeout = new Promise(resolve => setTimeout(resolve, 30_000))
   if (exits.length > 0) {
     const winner = await Promise.race([Promise.all(exits).then(() => 'exited'), timeout])
-    if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 15s -- cleaning up local files anyway');
+    if (winner !== 'exited') console.log('[bridge] a spawned echo did not exit within 30s -- cleaning up local files anyway');
   }
   if (session.pk) await cleanupLocalFiles(session.pk);
 }
