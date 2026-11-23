@@ -14,10 +14,18 @@ point for.
 **What to expect, start to finish:** every link here opens its own tab rather than replacing the
 one you're on, on purpose -- so trying one Job never costs you another's still-live session. A
 full run through this guide opens six, in order: this intro page; `echo` and `calc`, each tried
-straight from it (optional, but confirms the straightforward case before joining); `csr`'s own
-bridge page; and, once that finishes, two more direct links the bridge page itself offers --
-chatting with your own new identity's own echo, and the Owner's own echo again, now cheaper. Six
-is the steady-state count; fewer usually means a step silently failed somewhere along the way.
+straight from it; `csr`'s own bridge page; and, once that finishes, two more direct links the
+bridge page itself offers -- the Owner's own echo again, now cheaper, and chatting with your own
+new identity's own echo. Six is the steady-state count; fewer usually means a step silently failed
+somewhere along the way.
+
+Both pages guide that order rather than just suggesting it: on the intro page, `calc` stays
+unclickable until `echo`'s own session has actually ended with a PoD, and `csr` until `calc`'s
+has; on the bridge page, the "chat with your own echo" link stays unclickable until the "request
+the Owner's echo again" one has. Nothing is actually gated server-side -- it's a guide, not a
+lock -- so a direct link still works regardless, but following the intro page's own
+left-to-right order (and the bridge page's own top-to-bottom one) gets the full six-tab run
+without having to know the order by heart.
 
 ## One-time setup
 

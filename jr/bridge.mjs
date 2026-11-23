@@ -82,7 +82,7 @@ const DEMO_CERT_EMAIL = process.env.DEMO_CERT_EMAIL ?? 'demo@kloudoftrust.org'
 const MATCH_TIMEOUT_MS = Number(process.env.TG_MATCH_TIMEOUT_MS ?? 30_000)
 const GRANT_TIMEOUT_MS = process.env.TG_GRANT_TIMEOUT_MS ? Number(process.env.TG_GRANT_TIMEOUT_MS) : undefined
 
-let state = { status: 'idle', log: [] } // {{{1
+let state = { status: 'idle', log: [], done: {} } // {{{1
 const log = line => { console.log('[bridge]', line); state.log.push(line) }
 // Auto-cleanup fallback (SESSION_TTL_MS): the pitch page below promises
 // "cleaned up automatically, whether this ends cleanly or not" -- but
@@ -314,7 +314,7 @@ async function runJoinFlow () {
   // expiry for yet (e.g. a retry right after a 'failed' run) -- tear it
   // down now instead of leaking its children/local files forever.
   if (currentSession) cleanup(currentSession);
-  state = { status: 'running', log: [] }
+  state = { status: 'running', log: [], done: {} }
   const children = []
   let session // {{{1
   try {
@@ -569,23 +569,37 @@ latest, whether this ends cleanly or not.</p>
        exist to let the visitor keep using. Caught live: every single click
        killed its own target identity immediately, regardless of SESSION_TTL_MS's
        own value, which looked like a timing bug but never was one. intro.mjs's
-       own csr link already knew to do this; these two just never matched it. -->
+       own csr link already knew to do this; these two just never matched it.
+
+       Guided order: ownerEcho unlocks the moment tryit itself shows (nothing
+       else needs to happen first); ownEcho starts "locked" (class, below) --
+       chat-session.mjs's own notifyUrl, appended to ownerEcho's own href, is
+       what flips s.done['owner-echo'] once that session actually ends, which
+       the still-running poll below picks up and unlocks ownEcho with. -->
+  <style>.locked { opacity: 0.4; pointer-events: none; }</style>
   <p><b>Try it now:</b></p>
-  <p id="ownEchoP" style="display:none;"><a id="ownEcho" href="#" target="_blank">Chat with your own echo &rarr;</a>
-  -- the one you just stood up, self-issued, delegates real arithmetic to JA2's own calc Job.</p>
   <p><a id="ownerEcho" href="#" target="_blank">Request the Owner's echo again &rarr;</a> -- notice it's cheaper
   than before: that's your own new identity undercutting it, live.</p>
+  <p id="ownEchoP" style="display:none;">
+    <a id="ownEcho" href="#" target="_blank" class="locked">Chat with your own echo &rarr;</a>
+    -- the one you just stood up, self-issued, delegates real arithmetic to JA2's own calc Job.
+    <span id="ownEchoHint">(try the Owner's echo above first)</span>
+  </p>
 </div>
 <script>
 const btn = document.getElementById('go'), log = document.getElementById('log');
 const tryit = document.getElementById('tryit');
 let shown = false; // tryit is shown once per session, not re-toggled on every 1s poll tick
+let unlocked = false; // ownEcho's own locked -> unlocked transition, same one-shot guard
+let poll; // cleared on a fresh /join, not just left to accumulate across repeat clicks
 btn.onclick = async () => {
+  if (poll) clearInterval(poll);
   btn.disabled = true;
   shown = false;
+  unlocked = false;
   tryit.style.display = 'none';
   await fetch('/join', { method: 'POST' });
-  const poll = setInterval(async () => {
+  poll = setInterval(async () => {
     const s = await (await fetch('/status')).json();
     log.textContent = s.log.join('\\n');
     if (s.status === 'done' && s.pk && !shown) {
@@ -598,12 +612,28 @@ btn.onclick = async () => {
       // without it already having succeeded.
       if (s.ownEchoLive) {
         document.getElementById('ownEcho').href =
-          '${JA_PAGE_URL}/own-echo?' + new URLSearchParams({ issuerPk: s.pk });
+          '${JA_PAGE_URL}/own-echo?' + new URLSearchParams({
+            issuerPk: s.pk, notifyUrl: location.origin + '/mark-done?job=own-echo',
+          });
         document.getElementById('ownEchoP').style.display = 'block';
       }
       document.getElementById('ownerEcho').href =
-        '${JA_PAGE_URL}/owner-echo?' + new URLSearchParams({ issuerPk: '${ownerPk}' });
+        '${JA_PAGE_URL}/owner-echo?' + new URLSearchParams({
+          issuerPk: '${ownerPk}', notifyUrl: location.origin + '/mark-done?job=owner-echo',
+        });
       tryit.style.display = 'block';
+    }
+    // Only ever flips false -> true, once -- s.done is this session's own
+    // accumulated record (runJoinFlow() resets it fresh each /join, not
+    // this poll), so there's nothing to re-lock mid-session even if this
+    // tick's own fetch raced an earlier one.
+    if (s.done && s.done['owner-echo'] && !unlocked) {
+      unlocked = true;
+      const ownEcho = document.getElementById('ownEcho')
+      if (ownEcho) {
+        ownEcho.classList.remove('locked')
+        document.getElementById('ownEchoHint').style.display = 'none';
+      }
     }
     // Once tryit is showing, scroll to *it* specifically, not to the
     // page's own absolute bottom -- by the time 'done' is reached, the
@@ -618,7 +648,11 @@ btn.onclick = async () => {
     // following the streaming log (tryit not shown yet).
     if (shown) tryit.scrollIntoView({ behavior: 'smooth', block: 'start' });
     else window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    if (s.status !== 'running') { clearInterval(poll); btn.disabled = false; }
+    // Re-enables the button once this attempt itself is settled, but
+    // keeps polling regardless -- s.done['owner-echo'] (above) can still
+    // arrive well after 'done', from a tab the visitor hasn't even
+    // opened yet, and nothing else would ever notice it land.
+    if (s.status !== 'running') btn.disabled = false;
   }, 1000);
 };
 // Closing this tab (or navigating away) has to actually end the
@@ -649,6 +683,20 @@ const bridgeServer = http.createServer((req, res) => { // {{{1
   } else if (req.method === 'GET' && req.url === '/status') {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(state))
+  } else if (req.method === 'GET' && req.url.startsWith('/mark-done')) {
+    // Fired by chat-session.mjs's own notifyUrl, from the *qa deploy's*
+    // own origin (own-echo/owner-echo), not this one -- a cross-origin
+    // fire-and-forget GET with no custom headers needs no CORS
+    // handling on this end at all: the browser still sends it and this
+    // still receives it, CORS only ever blocks the caller from reading
+    // a response it never asked to read (see chat-session.mjs's own
+    // `.catch(() => {})`). Drives PITCH_HTML's own "owner-echo unlocks
+    // own-echo" sequencing below, via the same /status polling loop
+    // that already tracks everything else.
+    const job = new URL(req.url, 'http://x').searchParams.get('job')
+    if (job) state.done[job] = true;
+    res.writeHead(204)
+    res.end()
   } else if (req.method === 'POST' && req.url === '/leave') {
     // The pitch page's own pagehide beacon -- see its header comment.
     // Only tears down *this session's* own spawned echoes and local

@@ -13,4 +13,5 @@ runChatSession({
   label: 'calc',
   matchedMessage: "Matched -- type an arithmetic expression and hit Send, e.g. '2 + 3 * 4'.",
   discoverIssuerFromJobs: true,
+  completionKey: 'calc', // intro.mjs's own guided-order catalog unlocks csr on this
 })

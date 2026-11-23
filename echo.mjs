@@ -11,4 +11,5 @@ runChatSession({
   label: 'echo',
   matchedMessage: 'Matched -- type a message and hit Send.',
   showDelegationHeadsUp: true,
+  completionKey: 'echo', // intro.mjs's own guided-order catalog unlocks calc on this
 })

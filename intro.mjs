@@ -44,6 +44,21 @@ reset({ content: document.getElementById('content1'), })
 // to /jobs the moment their own services start.
 const BROWSER_UNSUPPORTED = new Set(['PEER', 'SELL', 'buyInvite'])
 
+// Guided order (ccddh.md's "open the tabs in an orderly manner" round):
+// ECHO is always immediately try-able; CALC unlocks once ECHO's own
+// chat-session.mjs has actually ended with a PoD (completionKey:
+// 'echo'/'calc', see that file's own comment); CSR unlocks once CALC
+// has. localStorage, not a server-side flag -- echo/calc/intro are all
+// the same origin, so the Job's own tab (a different tab from this
+// catalog) can just write a key this tab picks up, no new endpoint
+// needed the way bridge.mjs's own cross-origin own-echo/owner-echo case
+// does (see jr/bridge.mjs's own notifyUrl/mark-done). {{{1
+const CATALOG_ORDER = ['ECHO', 'CALC', 'CSR']
+const UNLOCKED_BY = { ECHO: null, CALC: 'echo', CSR: 'calc' }
+for (const key of ['echo', 'calc']) {
+  try { localStorage.removeItem(`kot_done_${key}`) } catch {}
+}
+
 // The local bridge's own default port (tg/ja/public/jr/bridge.mjs's own
 // BRIDGE_PORT default) -- http, not https: localhost is treated as a
 // secure context regardless of scheme, same reasoning dqad.md's own
@@ -77,6 +92,16 @@ async function renderCatalog () {
     out('<p>No Jobs posted right now -- check back later.</p>')
     return;
   }
+  // CATALOG_ORDER first, in that order; anything else (there isn't
+  // anything else today) keeps its own relative /jobs order, appended
+  // after.
+  jobs.sort((a, b) => {
+    const ia = CATALOG_ORDER.indexOf(a.name), ib = CATALOG_ORDER.indexOf(b.name)
+    if (ia === -1 && ib === -1) return 0;
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  })
 
   for (const j of jobs) {
     // Every link opens in its own tab, always -- not just csr's own
@@ -103,11 +128,54 @@ async function renderCatalog () {
     const href = j.name === 'CSR'
       ? BRIDGE_URL
       : `/${j.name.toLowerCase()}?${new URLSearchParams({ issuerPk: j.issuerPk, description: j.desc ?? '' })}`
+    const unlockedBy = UNLOCKED_BY[j.name] // undefined (not one of the 3 guided ones) same as null -- always unlocked
+    const locked = unlockedBy && !isDone(unlockedBy)
     out(`<div class='job-card'>
       <b>${j.name}</b> -- ${j.desc ?? '(no description given)'}
-      <br/><a href='${href}' target='_blank'>Try this one</a>
+      <br/><span id='link-${j.name}'>${linkMarkup(href, locked, unlockedBy)}</span>
     </div>`)
   }
+
+  // Re-checked on focus/visibilitychange (the visitor switching back from
+  // the Job tab they just finished) and on 'storage' (fires in this tab
+  // the moment *another* same-origin tab writes the key -- it never
+  // fires in the tab that wrote it, which is why focus/visibilitychange
+  // stays as the backup, not the only path). Idempotent: unlocking an
+  // already-unlocked card is just re-rendering the same markup.
+  for (const j of jobs) {
+    const unlockedBy = UNLOCKED_BY[j.name]
+    if (!unlockedBy) continue;
+    const el = document.getElementById(`link-${j.name}`)
+    if (!el) continue;
+    const check = () => {
+      if (!isDone(unlockedBy)) return;
+      const href = j.name === 'CSR'
+        ? BRIDGE_URL
+        : `/${j.name.toLowerCase()}?${new URLSearchParams({ issuerPk: j.issuerPk, description: j.desc ?? '' })}`
+      el.innerHTML = linkMarkup(href, false, unlockedBy)
+    }
+    window.addEventListener('storage', check)
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+  }
+}
+
+//function isDone (key) {{{1
+/** key is one of UNLOCKED_BY's own values ('echo'/'calc') -- see
+ * chat-session.mjs's own completionKey, the only writer of this. */
+function isDone (key) {
+  try { return localStorage.getItem(`kot_done_${key}`) === '1'; } catch { return false; }
+}
+
+//function linkMarkup (href, locked, unlockedBy) {{{1
+/** The live link once unlocked, or a plain, unclickable placeholder (not
+ * a disabled <a> -- browsers render that identically to an enabled one
+ * save for the cursor, which a demo visitor skimming the page could
+ * easily miss) naming what to try first, while locked. */
+function linkMarkup (href, locked, unlockedBy) {
+  return locked
+    ? `<span style='opacity:.5'>Try this one (try ${unlockedBy.toUpperCase()} first)</span>`
+    : `<a href='${href}' target='_blank'>Try this one</a>`;
 }
 
 renderCatalog().catch(e => { // {{{1
